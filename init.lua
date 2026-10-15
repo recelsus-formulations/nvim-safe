@@ -9,6 +9,7 @@ end
 local environment = load_config("environment").detect()
 load_config("clipboard").setup(environment)
 require("config").setup()
+vim.cmd.colorscheme("slate")
 if vim.treesitter and vim.treesitter.start then
     load_config("treesitter").setup()
 end
