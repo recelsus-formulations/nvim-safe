@@ -18,7 +18,7 @@ The configuration provides native clipboard integration, file navigation, termin
 
 ## Sidebar
 
-The sidebar hosts independent views in one window per tab. `Ctrl-e` opens or closes it. The first opening shows the File Tree; later openings restore the view and buffer state that were visible when it was closed. Inside the sidebar, `Ctrl-n` and `Ctrl-p` cycle through registered views. `:Ex` opens or toggles the File Tree directly. `gd` opens the definition view when the key is not already mapped; `:SymbolTree` opens document symbols, and `:SymbolTree definition` opens definitions.
+The sidebar hosts independent views in one window per tab. `Ctrl-e` opens or closes it. The first opening shows the File Tree; later openings restore the view, cursor position, and scroll position that were visible when it was closed. Inside the sidebar, `Ctrl-n` and `Ctrl-p` cycle through registered views while retaining each view's position. `:Ex` opens or toggles the File Tree directly. `gd` opens the definition view when the key is not already mapped; `:SymbolTree` opens document symbols, and `:SymbolTree definition` opens definitions.
 
 In the Symbol Tree, `Enter` expands or collapses a group or jumps to a location. `Tab` previews a location, `Ctrl-v` and `Ctrl-x` open it in a vertical or horizontal split, `R` refreshes the LSP result, and `q` closes the sidebar. A missing LSP produces a message without affecting the File Tree.
 

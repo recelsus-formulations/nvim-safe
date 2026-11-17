@@ -8,13 +8,20 @@ local sidebar_width = 30
 local function tab_state(tabpage)
     tabpage = tabpage or vim.api.nvim_get_current_tabpage()
     if not states[tabpage] then
-        states[tabpage] = { window = nil, active_view = nil, last_view = nil, buffers = {}, source_window = nil }
+        states[tabpage] = { window = nil, active_view = nil, last_view = nil,
+            buffers = {}, views = {}, source_window = nil }
     end
     return states[tabpage]
 end
 
 local function valid_window(window)
     return window and vim.api.nvim_win_is_valid(window)
+end
+
+local function save_view(state)
+    if valid_window(state.window) and state.active_view then
+        state.views[state.active_view] = vim.api.nvim_win_call(state.window, vim.fn.winsaveview)
+    end
 end
 
 function M.register(name, view)
@@ -107,6 +114,7 @@ function M.show(name, context)
         vim.cmd("topleft " .. sidebar_width .. "vsplit")
         state.window = vim.api.nvim_get_current_win()
     else
+        save_view(state)
         vim.api.nvim_set_current_win(state.window)
     end
     local buffer = state.buffers[name]
@@ -130,6 +138,11 @@ function M.show(name, context)
     if view.refresh then
         view.refresh(context)
     end
+    if state.views[name] then
+        pcall(vim.api.nvim_win_call, state.window, function()
+            vim.fn.winrestview(state.views[name])
+        end)
+    end
     return state.window
 end
 
@@ -140,6 +153,7 @@ function M.close()
         state.active_view = nil
         return
     end
+    save_view(state)
     state.last_view = state.active_view
     if #vim.api.nvim_tabpage_list_wins(0) == 1 then
         vim.api.nvim_set_current_win(state.window)
