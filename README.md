@@ -1,4 +1,4 @@
-# Neovim - of
+# Neovim - Safe
 
 A Neovim configuration built around its native APIs. It works without a plugin manager. Mason and nvim-treesitter are optional and are fetched only when their commands are run.
 
@@ -15,6 +15,12 @@ Run `bin/check.sh` to inspect the available commands, parsers, and language serv
 ## Features
 
 The configuration provides native clipboard integration, file navigation, terminal windows, text search, pairs, jump labels, scope highlighting, Git signs, optional Tree-sitter highlighting, completion, and LSP support. Most features use only Neovim's built-in APIs.
+
+## Sidebar
+
+The sidebar hosts independent views in one window per tab. `Ctrl-e` or `:Ex` toggles the File Tree. `gd` opens the definition view when the key is not already mapped; `:SymbolTree` opens document symbols, and `:SymbolTree definition` opens definitions. Switching views reuses the same window and retains each view's buffer.
+
+In the Symbol Tree, `Enter` expands or collapses a group or jumps to a location. `Tab` previews a location, `Ctrl-v` and `Ctrl-x` open it in a vertical or horizontal split, `R` refreshes the LSP result, and `q` closes the sidebar. A missing LSP produces a message without affecting the File Tree.
 
 `<leader>fg` opens text search. It uses ripgrep when `rg` is available and a native Neovim search otherwise. Separate fields accept a search pattern, comma-separated extensions such as `php,js`, and extra exclusions such as `*.json,node_modules/`. Tab moves through the three fields and the results list. The search pattern uses ripgrep regular expressions with `rg` and Vim regular expressions in the fallback.
 

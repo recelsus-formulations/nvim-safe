@@ -1,8 +1,8 @@
 local M = {}
 local compat = require("compat")
 local git = require("ex.git")
+local sidebar = require("ex.sidebar")
 local states = {}
-local tree_width = 30
 local git_namespace = vim.api.nvim_create_namespace("ex_tree_git")
 -- git が無い環境では Git の状態表示を行わない (setup で判定)
 local git_enabled = false
@@ -37,7 +37,7 @@ local function get_state()
 end
 
 local function selected_entry(state)
-    if not is_valid_window(state.window) then
+    if not is_valid_window(state.window) or vim.api.nvim_win_get_buf(state.window) ~= state.buffer then
         return nil
     end
     return state.entries[vim.api.nvim_win_get_cursor(state.window)[1]]
@@ -155,7 +155,7 @@ local function render(state, selected_path)
     vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
     vim.bo[state.buffer].modifiable = false
     decorate(state)
-    if is_valid_window(state.window) then
+    if is_valid_window(state.window) and vim.api.nvim_win_get_buf(state.window) == state.buffer then
         for index, entry in ipairs(entries) do
             if entry.path == selected_path then
                 vim.api.nvim_win_set_cursor(state.window, { index, 0 })
@@ -290,53 +290,6 @@ local function refresh_git(state, only_new)
     end
 end
 
-local function usable_windows(state)
-    local windows = {}
-    for _, window in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-        local buffer = vim.api.nvim_win_get_buf(window)
-        local config = vim.api.nvim_win_get_config(window)
-        if window ~= state.window and config.relative == "" and config.focusable ~= false
-            and vim.bo[buffer].buftype == "" and not compat.is_winfixbuf(window)
-        then
-            table.insert(windows, window)
-        end
-    end
-    return windows
-end
-
-local function pick_window(windows)
-    if #windows <= 1 then
-        return windows[1]
-    end
-    local labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
-    if #windows > #labels then
-        report_error("Too many windows to select")
-        return nil
-    end
-    local saved = {}
-    local laststatus = vim.o.laststatus
-    vim.o.laststatus = 2
-    for index, window in ipairs(windows) do
-        saved[window] = vim.wo[window].statusline
-        vim.wo[window].statusline = "%=" .. labels:sub(index, index) .. "%="
-    end
-    vim.cmd.redraw()
-    local ok, key = pcall(vim.fn.getcharstr)
-    for window, statusline in pairs(saved) do
-        if is_valid_window(window) then
-            vim.wo[window].statusline = statusline
-        end
-    end
-    vim.o.laststatus = laststatus
-    if ok then
-        for index, window in ipairs(windows) do
-            if key:upper() == labels:sub(index, index) and is_valid_window(window) then
-                return window
-            end
-        end
-    end
-end
-
 local function open_entry(state, mode)
     local entry = selected_entry(state)
     if not entry then
@@ -350,7 +303,7 @@ local function open_entry(state, mode)
         end
         return
     end
-    local windows = usable_windows(state)
+    local windows = sidebar.editor_windows()
     local target
     for _, window in ipairs(windows) do
         if vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(window)) == entry.path then
@@ -362,7 +315,7 @@ local function open_entry(state, mode)
         end
     end
     if #windows > 0 then
-        target = pick_window(windows)
+        target = sidebar.pick_editor_window(windows)
         if not target then
             return
         end
@@ -405,7 +358,7 @@ local function open_entry(state, mode)
         end
     end)
     if is_valid_window(state.window) then
-        vim.api.nvim_win_set_width(state.window, tree_width)
+        sidebar.restore_width()
         if mode == "preview" or not ok then
             vim.api.nvim_set_current_win(state.window)
         end
@@ -581,13 +534,7 @@ local function change_root_to_node(state)
     end
 end
 
-local function open_tree(state)
-    if is_valid_window(state.window) and vim.api.nvim_win_get_buf(state.window) == state.buffer then
-        vim.api.nvim_set_current_win(state.window)
-        render(state)
-        refresh_git(state)
-        return
-    end
+local function create_tree_buffer(state)
     if not state.buffer or not vim.api.nvim_buf_is_valid(state.buffer) then
         state.buffer = vim.api.nvim_create_buf(false, true)
         vim.bo[state.buffer].bufhidden = "hide"
@@ -611,30 +558,11 @@ local function open_tree(state)
         map("<C-]>", function() change_root_to_node(state) end, "tree: change root to node")
         map("q", M.toggle, "tree: close")
     end
-    vim.cmd("topleft " .. tree_width .. "vsplit")
-    state.window = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(state.window, state.buffer)
-    vim.wo[state.window].winfixwidth = true
-    compat.set_window_local(state.window, "number", false)
-    compat.set_window_local(state.window, "relativenumber", false)
-    compat.set_window_local(state.window, "signcolumn", "no")
-    compat.set_window_local(state.window, "foldcolumn", "0")
-    compat.set_window_local(state.window, "wrap", false)
-    compat.set_window_local(state.window, "cursorline", true)
-    render(state)
-    refresh_git(state)
+    return state.buffer
 end
 
 function M.toggle()
-    local state = get_state()
-    if is_valid_window(state.window) and vim.api.nvim_win_get_buf(state.window) == state.buffer then
-        if #vim.api.nvim_tabpage_list_wins(0) == 1 then
-            vim.cmd("belowright vnew")
-        end
-        vim.api.nvim_win_close(state.window, true)
-        return
-    end
-    open_tree(state)
+    sidebar.toggle("file")
 end
 
 local function open_directory(buffer, window, path)
@@ -663,7 +591,7 @@ local function open_directory(buffer, window, path)
         end
         vim.api.nvim_win_set_buf(window, previous)
     end
-    open_tree(state)
+    sidebar.show("file")
     if #vim.fn.win_findbuf(buffer) == 0 then
         vim.api.nvim_buf_delete(buffer, { force = false })
     end
@@ -701,6 +629,20 @@ local function setup_git(group)
 end
 
 function M.setup()
+    sidebar.register("file", {
+        create = function()
+            return create_tree_buffer(get_state())
+        end,
+        refresh = function()
+            local state = get_state()
+            state.window = sidebar.get_window()
+            render(state)
+            refresh_git(state)
+        end,
+        dispose = function(context)
+            states[context.tabpage] = nil
+        end,
+    })
     vim.g.loaded_netrw = 1
     vim.g.loaded_netrwPlugin = 1
     vim.keymap.set("n", "<C-e>", M.toggle, { desc = "tree: toggle" })
@@ -717,19 +659,6 @@ function M.setup()
             end
             path = vim.fs.normalize(path)
             vim.schedule(function() open_directory(options.buf, window, path) end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("TabClosed", {
-        group = group,
-        callback = function()
-            for tabpage, state in pairs(states) do
-                if not vim.api.nvim_tabpage_is_valid(tabpage) then
-                    if state.buffer and vim.api.nvim_buf_is_valid(state.buffer) then
-                        vim.api.nvim_buf_delete(state.buffer, { force = true })
-                    end
-                    states[tabpage] = nil
-                end
-            end
         end,
     })
 end
