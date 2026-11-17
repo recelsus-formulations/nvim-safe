@@ -10,16 +10,19 @@ local environment = load_config("environment").detect()
 load_config("clipboard").setup(environment)
 require("config").setup()
 vim.cmd.colorscheme("slate")
-if vim.treesitter and vim.treesitter.start then
-    load_config("treesitter").setup()
-end
+require("tree-sitter").setup()
 
 require("ex.tree").setup()
 require("ex.term").setup()
 require("ex.pairs").setup()
 require("ex.jump").setup()
 require("ex.scope").setup()
-if vim.fn.executable("git") == 1 then
+require("ex.find").setup()
+
+if require("ex.git").is_available() then
     require("ex.signs").setup()
 end
-require("ex.find").setup()
+require("lsp").setup()
+require("command").setup()
+require("completion").setup()
+load_config("highlight").setup()

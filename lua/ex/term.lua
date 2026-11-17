@@ -1,4 +1,5 @@
 local M = {}
+local compat = require("compat")
 local terminals = {
     horizontal = { views = {} },
     float = { views = {} },
@@ -112,14 +113,13 @@ function M.toggle(direction)
             vim.api.nvim_buf_delete(temporary_buffer, { force = false })
         end
     end
-    vim.wo[view.window][0].number = false
-    vim.wo[view.window][0].relativenumber = false
-    vim.wo[view.window][0].signcolumn = "no"
-    vim.wo[view.window][0].foldcolumn = "0"
+    compat.set_window_local(view.window, "number", false)
+    compat.set_window_local(view.window, "relativenumber", false)
+    compat.set_window_local(view.window, "signcolumn", "no")
+    compat.set_window_local(view.window, "foldcolumn", "0")
     if new_buffer then
         local buffer = terminal.buffer
-        local started, job = pcall(vim.fn.jobstart, vim.fn.split(vim.o.shell), {
-            term = true,
+        local started, job = pcall(compat.open_terminal, vim.fn.split(vim.o.shell), {
             cwd = vim.fn.getcwd(),
             on_exit = function()
                 vim.schedule(function()

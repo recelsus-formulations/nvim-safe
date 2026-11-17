@@ -122,7 +122,12 @@ function M.setup()
             set_highlights()
         end,
     })
-    vim.api.nvim_create_autocmd({ "CursorMoved", "ModeChanged", "BufLeave", "WinLeave", "SafeState" }, {
+    local clear_events = { "CursorMoved", "ModeChanged", "BufLeave", "WinLeave" }
+    -- SafeState は 0.10+
+    if vim.fn.exists("##SafeState") == 1 then
+        table.insert(clear_events, "SafeState")
+    end
+    vim.api.nvim_create_autocmd(clear_events, {
         group = group,
         callback = clear_highlights,
     })

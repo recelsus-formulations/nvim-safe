@@ -1,4 +1,5 @@
 local M = {}
+local compat = require("compat")
 
 local function parse_text(text)
     local linewise = text:sub(-1) == "\n"
@@ -9,13 +10,12 @@ local function parse_text(text)
 end
 
 function M.setup(environment)
-    local osc52 = require("vim.ui.clipboard.osc52")
     local registers = {}
     local function cached_paste(register)
         return vim.deepcopy(registers[register] or { { "" }, "v" })
     end
     local function copy(register)
-        local send = osc52.copy(register)
+        local send = compat.osc52_copy(register)
         return function(lines, register_type)
             registers[register] = { vim.deepcopy(lines), register_type }
             send(lines)
@@ -27,7 +27,7 @@ function M.setup(environment)
                 return cached_paste(register)
             end
             local ok, result = pcall(function()
-                return vim.system(environment.paste_command, {}):wait(2000)
+                return compat.system(environment.paste_command):wait(2000)
             end)
             if not ok or result.code ~= 0 or type(result.stdout) ~= "string" then
                 return cached_paste(register)

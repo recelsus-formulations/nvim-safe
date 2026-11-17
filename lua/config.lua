@@ -42,7 +42,7 @@ function M.setup()
     opt.swapfile = false
     opt.autoread = true
     opt.undofile = true
-    opt.undodir = vim.fs.joinpath(vim.fn.stdpath("cache"), "undo")
+    opt.undodir = require("compat").joinpath(vim.fn.stdpath("cache"), "undo")
     vim.fn.mkdir(opt.undodir:get()[1], "p")
 
     opt.clipboard:append("unnamedplus")

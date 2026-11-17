@@ -2,6 +2,20 @@ local M = {}
 local namespace = vim.api.nvim_create_namespace("ex_jump")
 local alphabet = "abcdefghijklmnopqrstuvwxyz"
 local active
+local no_targets = {}
+
+local function index_by_row(targets)
+    local rows = {}
+    for _, target in ipairs(targets) do
+        local list = rows[target.row]
+        if not list then
+            list = {}
+            rows[target.row] = list
+        end
+        list[#list + 1] = target
+    end
+    return rows
+end
 
 local function collect_targets(window, buffer)
     local cursor = vim.api.nvim_win_get_cursor(window)
@@ -82,7 +96,7 @@ local function select_target(targets)
     local candidates = targets
     local prefix = ""
     while #candidates > 1 do
-        active.targets = candidates
+        active.rows = index_by_row(candidates)
         active.prefix_length = #prefix
         vim.cmd("redraw!")
         local ok, key = pcall(vim.fn.getcharstr)
@@ -129,7 +143,7 @@ function M.words()
         window = window,
         buffer = buffer,
         changedtick = vim.api.nvim_buf_get_changedtick(buffer),
-        targets = targets,
+        rows = index_by_row(targets),
         prefix_length = 0,
     }
     local ok, target = pcall(select_target, targets)
@@ -155,29 +169,44 @@ function M.setup()
         group = vim.api.nvim_create_augroup("ex_jump", { clear = true }),
         callback = set_highlights,
     })
-    vim.api.nvim_set_decoration_provider(namespace, {
-        on_win = function(_, window, buffer)
-            return active ~= nil and window == active.window and buffer == active.buffer
-        end,
-        on_range = function(_, _, buffer, start_row, start_column, end_row, end_column)
-            if not active then
-                return
-            end
-            for _, target in ipairs(active.targets) do
-                if (target.row > start_row or (target.row == start_row and target.column >= start_column))
-                    and (target.row < end_row or (target.row == end_row and target.column < end_column))
+    local function draw(buffer, target)
+        vim.api.nvim_buf_set_extmark(buffer, namespace, target.row, target.column, {
+            virt_text = { { target.label:sub(active.prefix_length + 1), "ExJumpLabel" } },
+            virt_text_pos = "overlay",
+            hl_mode = "combine",
+            priority = 200,
+            ephemeral = true,
+        })
+    end
+    local function on_win(_, window, buffer)
+        return active ~= nil and window == active.window and buffer == active.buffer
+    end
+    local function on_range(_, _, buffer, start_row, start_column, end_row, end_column)
+        if not active then
+            return
+        end
+        for row = start_row, end_row do
+            for _, target in ipairs(active.rows[row] or no_targets) do
+                if (row > start_row or target.column >= start_column)
+                    and (row < end_row or target.column < end_column)
                 then
-                    vim.api.nvim_buf_set_extmark(buffer, namespace, target.row, target.column, {
-                        virt_text = { { target.label:sub(active.prefix_length + 1), "ExJumpLabel" } },
-                        virt_text_pos = "overlay",
-                        hl_mode = "combine",
-                        priority = 200,
-                        ephemeral = true,
-                    })
+                    draw(buffer, target)
                 end
             end
-        end,
-    })
+        end
+    end
+    local function on_line(_, _, buffer, row)
+        if not active then
+            return
+        end
+        for _, target in ipairs(active.rows[row] or no_targets) do
+            draw(buffer, target)
+        end
+    end
+    -- on_range が使えるならそれを使い、未対応 (0.11 以前) なら on_line にフォールバックする
+    if not pcall(vim.api.nvim_set_decoration_provider, namespace, { on_win = on_win, on_range = on_range }) then
+        vim.api.nvim_set_decoration_provider(namespace, { on_win = on_win, on_line = on_line })
+    end
 end
 
 return M

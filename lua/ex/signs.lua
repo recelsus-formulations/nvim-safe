@@ -1,9 +1,11 @@
 local M = {}
+local compat = require("compat")
 local namespace = vim.api.nvim_create_namespace("ex_signs")
 local states = {}
 local timer
 local stopping = false
 local maximum_bytes = 1024 * 1024
+local diff = (vim.text and vim.text.diff) or vim.diff
 local signs = {
     add = { text = "+", group = "ExGitAdd" },
     change = { text = "│", group = "ExGitChange" },
@@ -47,7 +49,7 @@ local function render(buffer, state)
     if vim.bo[buffer].bomb and base:sub(1, 3) == "\239\187\191" then
         base = base:sub(4)
     end
-    local hunks = vim.text.diff(base, text, { result_type = "indices", algorithm = "histogram" })
+    local hunks = diff(base, text, { result_type = "indices", algorithm = "histogram" })
     local positions = {}
     for _, hunk in ipairs(hunks) do
         local removed, start_line, added = hunk[2], hunk[3], hunk[4]
@@ -92,7 +94,7 @@ local function refresh(buffer)
         return
     end
     local directory = vim.fs.dirname(path)
-    local directory_stat = vim.uv.fs_stat(directory)
+    local directory_stat = compat.uv.fs_stat(directory)
     if not directory_stat or directory_stat.type ~= "directory" then
         state.base = nil
         state.object = nil
@@ -102,7 +104,7 @@ local function refresh(buffer)
     local function run(arguments, callback)
         local command = { "git", "--no-optional-locks", "--literal-pathspecs", "-C", directory }
         vim.list_extend(command, arguments)
-        state.process = vim.system(command, {}, vim.schedule_wrap(function(result)
+        state.process = compat.system(command, vim.schedule_wrap(function(result)
             if not is_current(buffer, state) then
                 return
             end
@@ -152,7 +154,7 @@ local function refresh_visible()
 end
 
 function M.setup()
-    if vim.fn.executable("git") ~= 1 then
+    if not require("ex.git").is_available() then
         vim.notify("Git signs disabled: git executable not found", vim.log.levels.WARN)
         return
     end

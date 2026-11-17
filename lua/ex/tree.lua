@@ -1,6 +1,24 @@
 local M = {}
+local compat = require("compat")
+local git = require("ex.git")
 local states = {}
 local tree_width = 30
+local git_namespace = vim.api.nvim_create_namespace("ex_tree_git")
+-- git が無い環境では Git の状態表示を行わない (setup で判定)
+local git_enabled = false
+
+-- nvim-tree の既定に合わせた記号。★ と Nerd Font の記号は ambiwidth=double で幅が変わるため置き換えている
+local git_icons = {
+    staged = { "✓", "ExTreeGitStaged" },
+    unstaged = { "✗", "ExTreeGitDirty" },
+    renamed = { "➜", "ExTreeGitRenamed" },
+    untracked = { "✚", "ExTreeGitNew" },
+    deleted = { "✖", "ExTreeGitDeleted" },
+    unmerged = { "!", "ExTreeGitMerge" },
+    ignored = { "◌", "ExTreeGitIgnored" },
+}
+-- 名前の色に使う種類の優先順位
+local git_priority = { "unmerged", "deleted", "unstaged", "renamed", "untracked", "staged", "ignored" }
 
 local function report_error(message)
     vim.notify(tostring(message), vim.log.levels.ERROR, { title = "File tree" })
@@ -25,6 +43,67 @@ local function selected_entry(state)
     return state.entries[vim.api.nvim_win_get_cursor(state.window)[1]]
 end
 
+-- entry の Git の状態を種類の一覧で返す。ディレクトリは配下に変更があれば unstaged (nvim-tree の dirty)
+local function git_kinds(state, entry)
+    local status = state.git
+    if not status then
+        return nil
+    end
+    local xy = status.files[entry.path]
+    if entry.directory and xy ~= "!!" then
+        return status.dirty[entry.path] and { "unstaged" } or nil
+    end
+    if xy then
+        return git.kinds(xy)
+    end
+    -- 無視されたディレクトリの配下
+    local parent = vim.fs.dirname(entry.path)
+    while parent and #parent >= #state.root do
+        if status.files[parent] == "!!" then
+            return { "ignored" }
+        end
+        local next_parent = vim.fs.dirname(parent)
+        if next_parent == parent then
+            break
+        end
+        parent = next_parent
+    end
+end
+
+local function decorate(state)
+    if not state.buffer or not vim.api.nvim_buf_is_valid(state.buffer) then
+        return
+    end
+    vim.api.nvim_buf_clear_namespace(state.buffer, git_namespace, 0, -1)
+    if not state.git then
+        return
+    end
+    for index, entry in ipairs(state.entries) do
+        local kinds = index > 1 and git_kinds(state, entry)
+        if kinds and #kinds > 0 then
+            local present = {}
+            local icons = {}
+            for _, kind in ipairs(kinds) do
+                present[kind] = true
+                table.insert(icons, { git_icons[kind][1], git_icons[kind][2] })
+            end
+            -- 右端の区切り線と詰まらないよう余白を空ける
+            table.insert(icons, { " " })
+            for _, kind in ipairs(git_priority) do
+                if present[kind] then
+                    vim.api.nvim_buf_set_extmark(state.buffer, git_namespace, index - 1, entry.name_column, {
+                        end_col = entry.name_column + #entry.name,
+                        hl_group = git_icons[kind][2],
+                        virt_text = icons,
+                        virt_text_pos = "right_align",
+                    })
+                    break
+                end
+            end
+        end
+    end
+end
+
 local function render(state, selected_path)
     if not state.buffer or not vim.api.nvim_buf_is_valid(state.buffer) then
         return
@@ -34,19 +113,19 @@ local function render(state, selected_path)
     local entries = { { path = state.root, directory = true } }
     local lines = { state.root }
     local function append_directory(path, depth)
-        local scanner, scan_error = vim.uv.fs_scandir(path)
+        local scanner, scan_error = compat.uv.fs_scandir(path)
         if not scanner then
             report_error(scan_error)
             return
         end
         local children = {}
         while true do
-            local name, kind = vim.uv.fs_scandir_next(scanner)
+            local name, kind = compat.uv.fs_scandir_next(scanner)
             if not name then
                 break
             end
-            local child_path = vim.fs.joinpath(path, name)
-            local stat = kind == "link" and vim.uv.fs_stat(child_path) or nil
+            local child_path = compat.joinpath(path, name)
+            local stat = kind == "link" and compat.uv.fs_stat(child_path) or nil
             table.insert(children, {
                 path = child_path,
                 name = name,
@@ -62,7 +141,9 @@ local function render(state, selected_path)
         for _, entry in ipairs(children) do
             table.insert(entries, entry)
             local marker = entry.directory and (state.expanded[entry.path] and "- " or "+ ") or "  "
-            table.insert(lines, string.rep("  ", depth) .. marker .. entry.name)
+            local prefix = string.rep("  ", depth) .. marker
+            entry.name_column = #prefix
+            table.insert(lines, prefix .. entry.name)
             if entry.directory and state.expanded[entry.path] then
                 append_directory(entry.path, depth + 1)
             end
@@ -73,6 +154,7 @@ local function render(state, selected_path)
     vim.bo[state.buffer].modifiable = true
     vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
     vim.bo[state.buffer].modifiable = false
+    decorate(state)
     if is_valid_window(state.window) then
         for index, entry in ipairs(entries) do
             if entry.path == selected_path then
@@ -83,13 +165,138 @@ local function render(state, selected_path)
     end
 end
 
+local function is_visible(state)
+    return is_valid_window(state.window) and vim.api.nvim_win_get_buf(state.window) == state.buffer
+end
+
+local function is_inside(path, directory)
+    return path == directory or path:sub(1, #directory + 1) == directory .. "/"
+end
+
+-- 表示中のルートと展開済みディレクトリが属するリポジトリの git status を取得し、表示に反映する。
+-- only_new: 所属リポジトリが未確認のディレクトリがある場合だけ取得する (展開時)
+local function refresh_git(state, only_new)
+    if not git_enabled or not is_visible(state) then
+        return
+    end
+    if state.git_running then
+        state.git_pending = state.git_pending or not only_new
+        return
+    end
+    state.git_toplevels = state.git_toplevels or {}
+    local directories = { state.root }
+    for directory, expanded in pairs(state.expanded) do
+        if expanded and is_inside(directory, state.root) then
+            table.insert(directories, directory)
+        end
+    end
+    local unresolved = {}
+    for _, directory in ipairs(directories) do
+        if state.git_toplevels[directory] == nil then
+            local covered = false
+            for _, toplevel in pairs(state.git_toplevels) do
+                if toplevel and is_inside(directory, toplevel) then
+                    covered = true
+                    break
+                end
+            end
+            if not covered then
+                table.insert(unresolved, directory)
+            end
+        end
+    end
+    if only_new and #unresolved == 0 then
+        return
+    end
+    state.git_running = true
+    -- git は実体のパスを返すため、シンボリックリンク経由のルートとの差を変換する
+    local real_root = compat.uv.fs_realpath(state.root) or state.root
+    local function to_tree_path(path)
+        if real_root ~= state.root and is_inside(path, real_root) then
+            return state.root .. path:sub(#real_root + 1)
+        end
+        return path
+    end
+    local function finish(files)
+        state.git_running = false
+        local dirty = {}
+        for path, xy in pairs(files) do
+            if xy ~= "!!" then
+                local parent = vim.fs.dirname(path)
+                while parent and not dirty[parent] do
+                    dirty[parent] = true
+                    local next_parent = vim.fs.dirname(parent)
+                    if next_parent == parent then
+                        break
+                    end
+                    parent = next_parent
+                end
+            end
+        end
+        state.git = { files = files, dirty = dirty }
+        decorate(state)
+        if state.git_pending then
+            state.git_pending = false
+            refresh_git(state)
+        end
+    end
+    local function collect_status()
+        local toplevels = {}
+        for _, directory in ipairs(directories) do
+            local toplevel = state.git_toplevels[directory]
+            if toplevel == nil then
+                for _, known in pairs(state.git_toplevels) do
+                    if known and is_inside(directory, known) then
+                        toplevel = known
+                        break
+                    end
+                end
+            end
+            if toplevel then
+                toplevels[toplevel] = true
+            end
+        end
+        local files = {}
+        local remaining = vim.tbl_count(toplevels)
+        if remaining == 0 then
+            finish(files)
+            return
+        end
+        for toplevel in pairs(toplevels) do
+            git.status(toplevel, function(result)
+                for path, xy in pairs(result or {}) do
+                    files[to_tree_path(path)] = xy
+                end
+                remaining = remaining - 1
+                if remaining == 0 then
+                    finish(files)
+                end
+            end)
+        end
+    end
+    local remaining = #unresolved
+    if remaining == 0 then
+        collect_status()
+        return
+    end
+    for _, directory in ipairs(unresolved) do
+        git.toplevel(directory, function(toplevel)
+            state.git_toplevels[directory] = toplevel and to_tree_path(toplevel) or false
+            remaining = remaining - 1
+            if remaining == 0 then
+                collect_status()
+            end
+        end)
+    end
+end
+
 local function usable_windows(state)
     local windows = {}
     for _, window in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         local buffer = vim.api.nvim_win_get_buf(window)
         local config = vim.api.nvim_win_get_config(window)
         if window ~= state.window and config.relative == "" and config.focusable ~= false
-            and vim.bo[buffer].buftype == "" and not vim.wo[window].winfixbuf
+            and vim.bo[buffer].buftype == "" and not compat.is_winfixbuf(window)
         then
             table.insert(windows, window)
         end
@@ -139,6 +346,7 @@ local function open_entry(state, mode)
         if entry.path ~= state.root then
             state.expanded[entry.path] = not state.expanded[entry.path]
             render(state)
+            refresh_git(state, true)
         end
         return
     end
@@ -228,16 +436,16 @@ local function create_entry(state)
         local is_directory = path:sub(-1) == "/"
         path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p")):gsub("/+$", "")
         local ok, create_error = pcall(function()
-            if vim.uv.fs_lstat(path) then
+            if compat.uv.fs_lstat(path) then
                 error("Path already exists: " .. path)
             end
             vim.fn.mkdir(is_directory and path or vim.fs.dirname(path), "p")
             if not is_directory then
-                local descriptor, file_error = vim.uv.fs_open(path, "wx", 420)
+                local descriptor, file_error = compat.uv.fs_open(path, "wx", 420)
                 if not descriptor then
                     error(file_error)
                 end
-                vim.uv.fs_close(descriptor)
+                compat.uv.fs_close(descriptor)
             end
         end)
         if not ok then
@@ -245,6 +453,7 @@ local function create_entry(state)
         end
         state.expanded[directory] = true
         render(state, path)
+        refresh_git(state)
     end)
 end
 
@@ -270,7 +479,7 @@ local function delete_entry(state)
                 return
             end
         end
-        local stat = vim.uv.fs_lstat(entry.path)
+        local stat = compat.uv.fs_lstat(entry.path)
         local flags = stat and stat.type == "directory" and "rf" or ""
         if vim.fn.delete(entry.path, flags) ~= 0 then
             report_error("Could not delete: " .. entry.path)
@@ -282,6 +491,7 @@ local function delete_entry(state)
             end
         end
         render(state)
+        refresh_git(state)
     end)
 end
 
@@ -298,7 +508,7 @@ local function rename_entry(state)
         if path == entry.path then
             return
         end
-        if vim.uv.fs_lstat(path) then
+        if compat.uv.fs_lstat(path) then
             report_error("Path already exists: " .. path)
             return
         end
@@ -309,7 +519,7 @@ local function rename_entry(state)
                 return
             end
         end
-        local renamed, rename_error = vim.uv.fs_rename(entry.path, path)
+        local renamed, rename_error = compat.uv.fs_rename(entry.path, path)
         if not renamed then
             report_error(rename_error)
             return
@@ -327,13 +537,55 @@ local function rename_entry(state)
         end
         state.expanded = expanded
         render(state, path)
+        refresh_git(state)
     end)
+end
+
+local function change_root(state, path, selected_path)
+    path = vim.fs.normalize(path)
+    if path == state.root or vim.fn.isdirectory(path) ~= 1 then
+        return
+    end
+    local ok, cd_error = pcall(vim.api.nvim_cmd, { cmd = "tcd", args = { path } }, {})
+    if not ok then
+        report_error(cd_error)
+        return
+    end
+    state.root = path
+    render(state, selected_path)
+    refresh_git(state)
+end
+
+local function change_root_to_parent(state)
+    local parent = vim.fs.dirname(state.root)
+    if parent == state.root then
+        return
+    end
+    local entry = selected_entry(state)
+    -- 元のルートを展開しておき、カーソル位置のエントリを見失わないようにする
+    state.expanded[state.root] = true
+    change_root(state, parent, entry and entry.path or state.root)
+end
+
+local function change_root_to_node(state)
+    local entry = selected_entry(state)
+    if not entry then
+        return
+    end
+    if entry.path == state.root then
+        change_root_to_parent(state)
+    elseif entry.directory then
+        change_root(state, entry.path)
+    else
+        change_root(state, vim.fs.dirname(entry.path), entry.path)
+    end
 end
 
 local function open_tree(state)
     if is_valid_window(state.window) and vim.api.nvim_win_get_buf(state.window) == state.buffer then
         vim.api.nvim_set_current_win(state.window)
         render(state)
+        refresh_git(state)
         return
     end
     if not state.buffer or not vim.api.nvim_buf_is_valid(state.buffer) then
@@ -351,20 +603,26 @@ local function open_tree(state)
         map("a", function() create_entry(state) end, "tree: create")
         map("d", function() delete_entry(state) end, "tree: delete")
         map("r", function() rename_entry(state) end, "tree: rename")
-        map("R", function() render(state) end, "tree: refresh")
+        map("R", function()
+            render(state)
+            refresh_git(state)
+        end, "tree: refresh")
+        map("-", function() change_root_to_parent(state) end, "tree: change root to parent")
+        map("<C-]>", function() change_root_to_node(state) end, "tree: change root to node")
         map("q", M.toggle, "tree: close")
     end
     vim.cmd("topleft " .. tree_width .. "vsplit")
     state.window = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(state.window, state.buffer)
     vim.wo[state.window].winfixwidth = true
-    vim.wo[state.window][0].number = false
-    vim.wo[state.window][0].relativenumber = false
-    vim.wo[state.window][0].signcolumn = "no"
-    vim.wo[state.window][0].foldcolumn = "0"
-    vim.wo[state.window][0].wrap = false
-    vim.wo[state.window][0].cursorline = true
+    compat.set_window_local(state.window, "number", false)
+    compat.set_window_local(state.window, "relativenumber", false)
+    compat.set_window_local(state.window, "signcolumn", "no")
+    compat.set_window_local(state.window, "foldcolumn", "0")
+    compat.set_window_local(state.window, "wrap", false)
+    compat.set_window_local(state.window, "cursorline", true)
     render(state)
+    refresh_git(state)
 end
 
 function M.toggle()
@@ -414,12 +672,41 @@ local function open_directory(buffer, window, path)
     end
 end
 
+local function setup_git(group)
+    git_enabled = git.is_available()
+    if not git_enabled then
+        return
+    end
+    -- 色は Git Signs (ExGit*) に合わせる
+    local function set_highlights()
+        vim.api.nvim_set_hl(0, "ExTreeGitStaged", { link = "ExGitAdd", default = true })
+        vim.api.nvim_set_hl(0, "ExTreeGitDirty", { link = "ExGitChange", default = true })
+        vim.api.nvim_set_hl(0, "ExTreeGitDeleted", { link = "ExGitDelete", default = true })
+        vim.api.nvim_set_hl(0, "ExTreeGitNew", { fg = "#56b6c2", default = true })
+        vim.api.nvim_set_hl(0, "ExTreeGitRenamed", { fg = "#c678dd", default = true })
+        vim.api.nvim_set_hl(0, "ExTreeGitMerge", { fg = "#d19a66", bold = true, default = true })
+        vim.api.nvim_set_hl(0, "ExTreeGitIgnored", { link = "Comment", default = true })
+    end
+    set_highlights()
+    vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = set_highlights })
+    -- 保存・フォーカス復帰・端末や :! での git 操作の後に、表示中のツリーを更新する
+    vim.api.nvim_create_autocmd({ "BufWritePost", "FocusGained", "TermLeave", "TermClose", "ShellCmdPost" }, {
+        group = group,
+        callback = function()
+            for _, state in pairs(states) do
+                refresh_git(state)
+            end
+        end,
+    })
+end
+
 function M.setup()
     vim.g.loaded_netrw = 1
     vim.g.loaded_netrwPlugin = 1
     vim.keymap.set("n", "<C-e>", M.toggle, { desc = "tree: toggle" })
     vim.api.nvim_create_user_command("Ex", M.toggle, {})
     local group = vim.api.nvim_create_augroup("revim_file_tree", { clear = true })
+    setup_git(group)
     vim.api.nvim_create_autocmd("BufEnter", {
         group = group,
         callback = function(options)
