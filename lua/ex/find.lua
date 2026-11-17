@@ -729,9 +729,6 @@ function M.grep()
                 end
             end
             vim.api.nvim_set_current_win(input_windows[next_index])
-            if next_index < #input_windows then
-                vim.cmd.startinsert()
-            end
         end, "find: switch input/results")
         map({ "i", "n" }, "<C-q>", function()
             local items = {}
@@ -751,6 +748,22 @@ function M.grep()
             group = group, buffer = buffer, callback = function() update_query(state) end,
         })
     end
+    vim.api.nvim_create_autocmd("WinEnter", {
+        group = group,
+        callback = function()
+            local window = vim.api.nvim_get_current_win()
+            if window ~= state.input_window and window ~= state.extension_window
+                and window ~= state.exclude_window
+            then
+                return
+            end
+            vim.schedule(function()
+                if is_active(state) and vim.api.nvim_get_current_win() == window then
+                    vim.cmd.startinsert()
+                end
+            end)
+        end,
+    })
     vim.api.nvim_create_autocmd("CursorMoved", {
         group = group, buffer = state.results_buffer,
         callback = function()

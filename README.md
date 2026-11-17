@@ -22,7 +22,7 @@ The sidebar hosts independent views in one window per tab. `Ctrl-e` opens or clo
 
 In the Symbol Tree, `Enter` expands or collapses a group or jumps to a location. `Tab` previews a location, `Ctrl-v` and `Ctrl-x` open it in a vertical or horizontal split, `R` refreshes the LSP result, and `q` closes the sidebar. A missing LSP produces a message without affecting the File Tree.
 
-`<leader>fg` opens text search. It uses ripgrep when `rg` is available and a native Neovim search otherwise. Separate fields accept a search pattern, comma-separated extensions such as `php,js`, and extra exclusions such as `*.json,node_modules/`. Tab moves through the three fields and the results list. The search pattern uses ripgrep regular expressions with `rg` and Vim regular expressions in the fallback.
+`<leader>fg` opens text search. It uses ripgrep when `rg` is available and a native Neovim search otherwise. Separate fields accept a search pattern, comma-separated extensions such as `php,js`, and extra exclusions such as `*.json,node_modules/`. Tab moves through the three fields and the results list. Each input field enters Insert mode when focused, so typing can begin immediately. The search pattern uses ripgrep regular expressions with `rg` and Vim regular expressions in the fallback.
 
 | Location | Purpose |
 | --- | --- |
