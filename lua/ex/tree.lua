@@ -645,7 +645,6 @@ function M.setup()
     })
     vim.g.loaded_netrw = 1
     vim.g.loaded_netrwPlugin = 1
-    vim.keymap.set("n", "<C-e>", M.toggle, { desc = "tree: toggle" })
     vim.api.nvim_create_user_command("Ex", M.toggle, {})
     local group = vim.api.nvim_create_augroup("revim_file_tree", { clear = true })
     setup_git(group)

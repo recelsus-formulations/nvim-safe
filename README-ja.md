@@ -161,13 +161,18 @@ parser の取得用に nvim-treesitter だけを任意で利用します（LSP �
 * nvim-treesitter を読み込むと、同梱の言語も nvim-treesitter の query が優先されます。`languages.lua` には同梱の言語も含めているので、`:TreesitterInstall` で parser も合わせて更新してください。
 * 折り畳み・インデント・文脈表示は有効にしません。
 
+## Sidebar
+
+`Ctrl-e` で Sidebar を開閉します。初回は File Tree を表示し、次回以降は閉じた時の View とバッファ状態を復元します。Sidebar 内では `Ctrl-n` / `Ctrl-p` で登録済み View を順方向 / 逆方向に切り替えます。Sidebar はタブごとに1ウィンドウで、View を切り替えてもウィンドウは増えません。
+
 ## File Tree
 
 File Tree はタブごとに最大1つの共通 Sidebar に表示します。Symbol Tree に切り替えてもウィンドウは増えず、ツリーの展開状態を保持します。
 
 | キー | 操作 |
 | --- | --- |
-| Ctrl-e / `:Ex` | ツリーの開閉 |
+| Ctrl-e | Sidebar の開閉。初回は File Tree、以後は最後に閉じた View を復元 |
+| `:Ex` | File Tree の表示・開閉 |
 | Return | ファイルを開く、ディレクトリの展開・折り畳み |
 | Tab | ツリーにフォーカスを残してプレビュー |
 | Ctrl-v | 垂直分割で開く |

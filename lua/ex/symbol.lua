@@ -121,8 +121,10 @@ local function render(state, message)
     if not state.buffer or not vim.api.nvim_buf_is_valid(state.buffer) then
         return
     end
+    local source_name = state.source_buffer and vim.api.nvim_buf_is_valid(state.source_buffer)
+        and vim.api.nvim_buf_get_name(state.source_buffer) or ""
     local header = state.mode == "definition" and "DEFINITION: " .. (state.word or "")
-        or "SYMBOLS: " .. vim.fn.fnamemodify(vim.api.nvim_buf_get_name(state.source_buffer), ":t")
+        or "SYMBOLS: " .. vim.fn.fnamemodify(source_name, ":t")
     local lines = { header, message or "" }
     state.rows = {}
     local function append(nodes, depth)
@@ -233,6 +235,8 @@ local function request_symbols(state)
     local tabpage = state.tabpage
     local buffer = state.source_buffer
     if not buffer or not vim.api.nvim_buf_is_valid(buffer) or vim.bo[buffer].buftype ~= "" then
+        state.message = "No source buffer available"
+        render(state, state.message)
         notify("No source buffer available")
         return
     end
@@ -246,10 +250,12 @@ local function request_symbols(state)
     if #clients == 0 then
         state.nodes = {}
         state.result_ready = true
-        render(state, "No connected LSP supports " .. method)
+        state.message = "No connected LSP supports " .. method
+        render(state, state.message)
         notify("No connected LSP supports " .. method)
         return
     end
+    state.message = "Loading..."
     render(state, "Loading...")
     local remaining = #clients
     local locations, seen, nodes = {}, {}, {}
@@ -266,7 +272,8 @@ local function request_symbols(state)
         end
         state.nodes = state.mode == "definition" and definition_nodes(locations) or nodes
         state.result_ready = true
-        render(state, #state.nodes == 0 and "No symbols found" or nil)
+        state.message = #state.nodes == 0 and "No symbols found" or nil
+        render(state, state.message)
     end
     for _, client in ipairs(clients) do
         local encoding = client.offset_encoding or "utf-16"
@@ -375,8 +382,20 @@ function M.setup()
         end,
         refresh = function(context)
             local state = tab_state()
-            if context and context.refresh == false then
-                render(state, #(state.nodes or {}) == 0 and "No symbols found" or nil)
+            if not state.mode then
+                local source_window = sidebar.source_window()
+                state.tabpage = vim.api.nvim_get_current_tabpage()
+                state.mode = "document"
+                if source_window and vim.api.nvim_win_is_valid(source_window) then
+                    local buffer = vim.api.nvim_win_get_buf(source_window)
+                    if vim.bo[buffer].buftype == "" then
+                        state.source_buffer = buffer
+                        state.source_cursor = vim.api.nvim_win_get_cursor(source_window)
+                    end
+                end
+            end
+            if context and (context.refresh == false or context.restore and state.result_ready) then
+                render(state, state.message)
             else
                 request_symbols(state)
             end

@@ -1,13 +1,14 @@
 local M = {}
 local compat = require("compat")
 local views = {}
+local view_order = {}
 local states = {}
 local sidebar_width = 30
 
 local function tab_state(tabpage)
     tabpage = tabpage or vim.api.nvim_get_current_tabpage()
     if not states[tabpage] then
-        states[tabpage] = { window = nil, active_view = nil, buffers = {}, source_window = nil }
+        states[tabpage] = { window = nil, active_view = nil, last_view = nil, buffers = {}, source_window = nil }
     end
     return states[tabpage]
 end
@@ -21,6 +22,7 @@ function M.register(name, view)
     assert(type(view) == "table" and type(view.create) == "function", "Sidebar view requires create()")
     assert(not views[name], "Sidebar view already registered: " .. name)
     views[name] = view
+    view_order[#view_order + 1] = name
 end
 
 function M.get_window(tabpage)
@@ -113,6 +115,10 @@ function M.show(name, context)
         assert(type(buffer) == "number" and vim.api.nvim_buf_is_valid(buffer), "Sidebar view returned an invalid buffer")
         state.buffers[name] = buffer
     end
+    vim.keymap.set("n", "<C-n>", function() M.cycle(1) end,
+        { buffer = buffer, silent = true, desc = "sidebar: next view" })
+    vim.keymap.set("n", "<C-p>", function() M.cycle(-1) end,
+        { buffer = buffer, silent = true, desc = "sidebar: previous view" })
     vim.api.nvim_win_set_buf(state.window, buffer)
     state.active_view = name
     vim.wo[state.window].winfixwidth = true
@@ -134,6 +140,7 @@ function M.close()
         state.active_view = nil
         return
     end
+    state.last_view = state.active_view
     if #vim.api.nvim_tabpage_list_wins(0) == 1 then
         vim.api.nvim_set_current_win(state.window)
         vim.cmd("belowright vnew")
@@ -145,6 +152,14 @@ function M.close()
 end
 
 function M.toggle(name, context)
+    if name == nil then
+        if M.current() then
+            M.close()
+        else
+            M.show(tab_state().last_view or view_order[1], { restore = true })
+        end
+        return
+    end
     if M.current() == name then
         M.close()
     else
@@ -152,7 +167,22 @@ function M.toggle(name, context)
     end
 end
 
+function M.cycle(direction)
+    local current = M.current()
+    if not current or #view_order < 2 then
+        return
+    end
+    for index, name in ipairs(view_order) do
+        if name == current then
+            local next_index = (index - 1 + direction) % #view_order + 1
+            M.show(view_order[next_index], { restore = true })
+            return
+        end
+    end
+end
+
 function M.setup()
+    vim.keymap.set("n", "<C-e>", function() M.toggle() end, { desc = "sidebar: toggle" })
     local group = vim.api.nvim_create_augroup("ex_sidebar", { clear = true })
     vim.api.nvim_create_autocmd("WinClosed", {
         group = group,
@@ -160,6 +190,7 @@ function M.setup()
             local closed = tonumber(options.match)
             for _, state in pairs(states) do
                 if state.window == closed then
+                    state.last_view = state.active_view
                     state.window = nil
                     state.active_view = nil
                 end
