@@ -728,8 +728,8 @@ function M.grep()
                 end
             end, "find: scroll preview")
         end
-        map({ "i", "n" }, "<Esc>", function() close(state) end, "find: close")
         map({ "i", "n" }, "<C-c>", function() close(state) end, "find: close")
+        map({ "n", "x" }, "<C-w>", "<Nop>", "find: keep focus in search")
         map({ "i", "n" }, "<Tab>", function()
             vim.cmd.stopinsert()
             local current = vim.api.nvim_get_current_win()
