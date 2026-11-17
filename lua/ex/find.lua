@@ -2,6 +2,7 @@ local M = {}
 local compat = require("compat")
 local active
 local namespace = vim.api.nvim_create_namespace("ex_find_matches")
+local selection_namespace = vim.api.nvim_create_namespace("ex_find_selection")
 local maximum_results = 500
 local maximum_bytes = 1024 * 1024
 local excluded_directories = { [".git"] = true, [".cache"] = true, Library = true, node_modules = true }
@@ -250,6 +251,15 @@ local function update_preview(state)
     end))
 end
 
+local function highlight_selection(state)
+    vim.api.nvim_buf_clear_namespace(state.results_buffer, selection_namespace, 0, -1)
+    if state.entries[state.selection] then
+        vim.api.nvim_buf_set_extmark(state.results_buffer, selection_namespace, state.selection - 1, 0, {
+            line_hl_group = "ExFindSelected", priority = 150,
+        })
+    end
+end
+
 local function render(state, message)
     if not is_active(state) or not vim.api.nvim_win_is_valid(state.results_window) then
         return
@@ -281,6 +291,7 @@ local function render(state, message)
     vim.bo[state.results_buffer].modifiable = false
     state.selection = math.max(1, math.min(state.selection, #lines))
     vim.api.nvim_win_set_cursor(state.results_window, { state.selection, 0 })
+    highlight_selection(state)
     vim.api.nvim_win_set_config(state.results_window, {
         title = " " .. #state.entries .. " matches | " .. (message or "Done") .. " ",
     })
@@ -293,6 +304,7 @@ local function move_selection(state, direction)
     end
     state.selection = (state.selection - 1 + direction) % #state.entries + 1
     vim.api.nvim_win_set_cursor(state.results_window, { state.selection, 0 })
+    highlight_selection(state)
     update_preview(state)
 end
 
@@ -662,7 +674,7 @@ function M.grep()
         relative = "editor", row = row + 7, col = column, width = results_width, height = results_height,
         border = "single", style = "minimal", title = " Results ",
     })
-    compat.set_window_local(state.results_window, "cursorline", true)
+    compat.set_window_local(state.results_window, "cursorline", false)
     compat.set_window_local(state.results_window, "wrap", false)
     compat.set_window_local(state.results_window, "signcolumn", "no")
     if preview_config then
@@ -769,6 +781,7 @@ function M.grep()
         callback = function()
             if is_active(state) and vim.api.nvim_win_is_valid(state.results_window) then
                 state.selection = vim.api.nvim_win_get_cursor(state.results_window)[1]
+                highlight_selection(state)
                 update_preview(state)
             end
         end,
@@ -795,6 +808,7 @@ function M.setup()
     local function set_highlights()
         vim.api.nvim_set_hl(0, "ExFindMatch", { fg = "#ffd166", bold = true, default = true })
         vim.api.nvim_set_hl(0, "ExFindCurrent", { bg = "#303846", default = true })
+        vim.api.nvim_set_hl(0, "ExFindSelected", { bg = "#445876", bold = true, default = true })
     end
     set_highlights()
     vim.api.nvim_create_autocmd("ColorScheme", {
