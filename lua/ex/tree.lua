@@ -4,6 +4,7 @@ local git = require("ex.git")
 local sidebar = require("ex.sidebar")
 local states = {}
 local git_namespace = vim.api.nvim_create_namespace("ex_tree_git")
+local entry_namespace = vim.api.nvim_create_namespace("ex_tree_entries")
 -- git が無い環境では Git の状態表示を行わない (setup で判定)
 local git_enabled = false
 
@@ -94,6 +95,7 @@ local function decorate(state)
                     vim.api.nvim_buf_set_extmark(state.buffer, git_namespace, index - 1, entry.name_column, {
                         end_col = entry.name_column + #entry.name,
                         hl_group = git_icons[kind][2],
+                        priority = 200,
                         virt_text = icons,
                         virt_text_pos = "right_align",
                     })
@@ -101,6 +103,21 @@ local function decorate(state)
                 end
             end
         end
+    end
+end
+
+local function decorate_entries(state)
+    vim.api.nvim_buf_clear_namespace(state.buffer, entry_namespace, 0, -1)
+    vim.api.nvim_buf_set_extmark(state.buffer, entry_namespace, 0, 0, {
+        end_col = #state.root, hl_group = "ExTreeRoot", priority = 100,
+    })
+    for index = 2, #state.entries do
+        local entry = state.entries[index]
+        vim.api.nvim_buf_set_extmark(state.buffer, entry_namespace, index - 1, entry.name_column, {
+            end_col = entry.name_column + #entry.name,
+            hl_group = entry.directory and "ExTreeDirectory" or "ExTreeFile",
+            priority = 100,
+        })
     end
 end
 
@@ -154,6 +171,7 @@ local function render(state, selected_path)
     vim.bo[state.buffer].modifiable = true
     vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
     vim.bo[state.buffer].modifiable = false
+    decorate_entries(state)
     decorate(state)
     if is_valid_window(state.window) and vim.api.nvim_win_get_buf(state.window) == state.buffer then
         for index, entry in ipairs(entries) do
@@ -629,6 +647,16 @@ local function setup_git(group)
 end
 
 function M.setup()
+    local function set_entry_highlights()
+        vim.api.nvim_set_hl(0, "ExTreeRoot", { fg = "#dfc18c", bold = true, default = true })
+        vim.api.nvim_set_hl(0, "ExTreeDirectory", { fg = "#83aeca", bold = true, default = true })
+        vim.api.nvim_set_hl(0, "ExTreeFile", { fg = "#d9d2c3", default = true })
+    end
+    set_entry_highlights()
+    vim.api.nvim_create_autocmd("ColorScheme", {
+        group = vim.api.nvim_create_augroup("revim_file_tree_colours", { clear = true }),
+        callback = set_entry_highlights,
+    })
     sidebar.register("file", {
         create = function()
             return create_tree_buffer(get_state())
