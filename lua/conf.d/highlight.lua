@@ -97,6 +97,9 @@ local excluded_groups = {
     Visual = true,
     VisualNOS = true,
     PmenuSel = true,
+    ExSidebarFileTitle = true,
+    ExSidebarSymbolTitle = true,
+    ExSidebarDiagnosticTitle = true,
 }
 
 local custom_groups = {

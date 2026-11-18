@@ -73,6 +73,7 @@ local function render(state)
     vim.bo[state.buffer].modifiable = true
     vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
     vim.bo[state.buffer].modifiable = false
+    sidebar.highlight_title(state.buffer, "ExSidebarDiagnosticTitle", #lines[1])
 end
 
 local function refresh()

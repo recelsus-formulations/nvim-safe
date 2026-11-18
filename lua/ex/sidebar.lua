@@ -4,6 +4,7 @@ local views = {}
 local view_order = {}
 local states = {}
 local sidebar_width = 30
+local title_namespace = vim.api.nvim_create_namespace("ex_sidebar_titles")
 
 local function tab_state(tabpage)
     tabpage = tabpage or vim.api.nvim_get_current_tabpage()
@@ -51,6 +52,15 @@ function M.restore_width()
     local window = M.get_window()
     if window then
         vim.api.nvim_win_set_width(window, sidebar_width)
+    end
+end
+
+function M.highlight_title(buffer, group, end_column)
+    vim.api.nvim_buf_clear_namespace(buffer, title_namespace, 0, 1)
+    if end_column > 0 then
+        vim.api.nvim_buf_set_extmark(buffer, title_namespace, 0, 0, {
+            end_col = end_column, hl_group = group, priority = 150,
+        })
     end
 end
 
@@ -198,6 +208,19 @@ end
 function M.setup()
     vim.keymap.set("n", "<C-e>", function() M.toggle() end, { desc = "sidebar: toggle" })
     local group = vim.api.nvim_create_augroup("ex_sidebar", { clear = true })
+    local function set_title_highlights()
+        vim.api.nvim_set_hl(0, "ExSidebarFileTitle", {
+            fg = "#87cefa", bg = "#263a4b", bold = true, default = true,
+        })
+        vim.api.nvim_set_hl(0, "ExSidebarSymbolTitle", {
+            fg = "#d5a6f0", bg = "#3a2d48", bold = true, default = true,
+        })
+        vim.api.nvim_set_hl(0, "ExSidebarDiagnosticTitle", {
+            fg = "#f3c27a", bg = "#49392a", bold = true, default = true,
+        })
+    end
+    set_title_highlights()
+    vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = set_title_highlights })
     vim.api.nvim_create_autocmd("WinClosed", {
         group = group,
         callback = function(options)

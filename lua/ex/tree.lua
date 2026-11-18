@@ -3,6 +3,7 @@ local compat = require("compat")
 local git = require("ex.git")
 local sidebar = require("ex.sidebar")
 local states = {}
+local title = "FILE TREE  "
 local git_namespace = vim.api.nvim_create_namespace("ex_tree_git")
 local entry_namespace = vim.api.nvim_create_namespace("ex_tree_entries")
 -- git が無い環境では Git の状態表示を行わない (setup で判定)
@@ -109,8 +110,9 @@ end
 
 local function decorate_entries(state)
     vim.api.nvim_buf_clear_namespace(state.buffer, entry_namespace, 0, -1)
-    vim.api.nvim_buf_set_extmark(state.buffer, entry_namespace, 0, 0, {
-        end_col = #state.root, hl_group = "ExTreeRoot", priority = 100,
+    sidebar.highlight_title(state.buffer, "ExSidebarFileTitle", #title)
+    vim.api.nvim_buf_set_extmark(state.buffer, entry_namespace, 0, #title, {
+        end_col = #title + #state.root, hl_group = "ExTreeRoot", priority = 100,
     })
     for index = 2, #state.entries do
         local entry = state.entries[index]
@@ -129,7 +131,7 @@ local function render(state, selected_path)
     local previous = selected_entry(state)
     selected_path = selected_path or (previous and previous.path)
     local entries = { { path = state.root, directory = true } }
-    local lines = { state.root }
+    local lines = { title .. state.root }
     local function append_directory(path, depth)
         local scanner, scan_error = compat.uv.fs_scandir(path)
         if not scanner then

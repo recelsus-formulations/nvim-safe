@@ -167,6 +167,7 @@ parser の取得用に nvim-treesitter だけを任意で利用します（LSP �
 ## Sidebar
 
 `Ctrl-e` で Sidebar を開閉します。初回は File Tree を表示し、次回以降は閉じた時の View・カーソル位置・スクロール位置を復元します。Sidebar 内では `Ctrl-n` / `Ctrl-p` で登録済み View を順方向 / 逆方向に切り替え、各 View の位置も保持します。Sidebar はタブごとに1ウィンドウで、View を切り替えてもウィンドウは増えません。
+各 View の1行目に色付きのタイトルを表示します。File Tree ではタイトルに続くルートパスの黄色を維持します。
 
 ## File Tree
 
