@@ -34,7 +34,7 @@ local function render(state)
     local buffer = state.source_buffer
     local name = buffer and vim.api.nvim_buf_is_valid(buffer)
         and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buffer), ":t") or ""
-    local lines = { "DIAGNOSTICS: " .. (name ~= "" and name or "[No Name]") }
+    local lines = { "DIAGNOSTICS TREE", name ~= "" and name or "[No Name]" }
     state.rows = {}
     if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
         lines[#lines + 1] = "No editor buffer available"
@@ -74,6 +74,7 @@ local function render(state)
     vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
     vim.bo[state.buffer].modifiable = false
     sidebar.highlight_title(state.buffer, "ExSidebarDiagnosticTitle", #lines[1])
+    sidebar.refresh_preview()
 end
 
 local function refresh()

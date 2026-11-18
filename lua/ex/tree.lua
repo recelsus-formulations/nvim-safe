@@ -3,7 +3,7 @@ local compat = require("compat")
 local git = require("ex.git")
 local sidebar = require("ex.sidebar")
 local states = {}
-local title = "FILE TREE  "
+local title = "FILE TREE"
 local git_namespace = vim.api.nvim_create_namespace("ex_tree_git")
 local entry_namespace = vim.api.nvim_create_namespace("ex_tree_entries")
 -- git が無い環境では Git の状態表示を行わない (setup で判定)
@@ -81,7 +81,7 @@ local function decorate(state)
         return
     end
     for index, entry in ipairs(state.entries) do
-        local kinds = index > 1 and git_kinds(state, entry)
+        local kinds = index > 2 and git_kinds(state, entry)
         if kinds and #kinds > 0 then
             local present = {}
             local icons = {}
@@ -111,10 +111,10 @@ end
 local function decorate_entries(state)
     vim.api.nvim_buf_clear_namespace(state.buffer, entry_namespace, 0, -1)
     sidebar.highlight_title(state.buffer, "ExSidebarFileTitle", #title)
-    vim.api.nvim_buf_set_extmark(state.buffer, entry_namespace, 0, #title, {
-        end_col = #title + #state.root, hl_group = "ExTreeRoot", priority = 100,
+    vim.api.nvim_buf_set_extmark(state.buffer, entry_namespace, 1, 0, {
+        end_col = #state.root, hl_group = "ExTreeRoot", priority = 100,
     })
-    for index = 2, #state.entries do
+    for index = 3, #state.entries do
         local entry = state.entries[index]
         vim.api.nvim_buf_set_extmark(state.buffer, entry_namespace, index - 1, entry.name_column, {
             end_col = entry.name_column + #entry.name,
@@ -129,9 +129,9 @@ local function render(state, selected_path)
         return
     end
     local previous = selected_entry(state)
-    selected_path = selected_path or (previous and previous.path)
-    local entries = { { path = state.root, directory = true } }
-    local lines = { title .. state.root }
+    selected_path = selected_path or (previous and previous.path) or state.root
+    local entries = { false, { path = state.root, directory = true } }
+    local lines = { title, state.root }
     local function append_directory(path, depth)
         local scanner, scan_error = compat.uv.fs_scandir(path)
         if not scanner then
@@ -178,12 +178,13 @@ local function render(state, selected_path)
     decorate(state)
     if is_valid_window(state.window) and vim.api.nvim_win_get_buf(state.window) == state.buffer then
         for index, entry in ipairs(entries) do
-            if entry.path == selected_path then
+            if entry and entry.path == selected_path then
                 vim.api.nvim_win_set_cursor(state.window, { index, 0 })
                 break
             end
         end
     end
+    sidebar.refresh_preview()
 end
 
 local function is_visible(state)

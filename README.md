@@ -19,7 +19,7 @@ The configuration provides native clipboard integration, file navigation, termin
 ## Sidebar
 
 The sidebar hosts independent views in one window per tab. `Ctrl-e` opens or closes it. The first opening shows the File Tree; later openings restore the view, cursor position, and scroll position that were visible when it was closed. Inside the sidebar, `Ctrl-n` and `Ctrl-p` cycle through the File Tree, Symbol Tree and Diagnostics Tree while retaining each view's position. `:Ex` opens or toggles the File Tree directly. `gd` opens the definition view when the key is not already mapped; `:SymbolTree` opens document symbols, and `:SymbolTree definition` opens definitions.
-The first row has a distinct coloured title for each view. In the File Tree, the root path follows the title and keeps its yellow colour.
+The first row has a distinct coloured title for each view. The File Tree shows its root path in yellow on the second row; the Symbol Tree and Diagnostics Tree show their target on the second row. When the cursor is on a row clipped by the sidebar width, a floating preview shows its full text. The preview closes when the row fits or focus leaves the sidebar.
 
 The File Tree shows its current root in yellow, directories in blue, and files in the normal text colour. Git status colours take precedence for changed entries; ignored paths and directory markers use a muted grey.
 

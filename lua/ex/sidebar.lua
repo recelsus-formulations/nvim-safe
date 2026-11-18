@@ -19,6 +19,72 @@ local function valid_window(window)
     return window and vim.api.nvim_win_is_valid(window)
 end
 
+local function close_preview(state)
+    local window = state.preview_window
+    local buffer = state.preview_buffer
+    state.preview_window = nil
+    state.preview_buffer = nil
+    if valid_window(window) then
+        vim.api.nvim_win_close(window, true)
+    end
+    if buffer and vim.api.nvim_buf_is_valid(buffer) then
+        vim.api.nvim_buf_delete(buffer, { force = true })
+    end
+end
+
+function M.refresh_preview()
+    local state = tab_state()
+    local window = state.window
+    if not valid_window(window) or vim.api.nvim_get_current_win() ~= window then
+        close_preview(state)
+        return
+    end
+    local buffer = vim.api.nvim_win_get_buf(window)
+    local cursor = vim.api.nvim_win_get_cursor(window)
+    local line = vim.api.nvim_buf_get_lines(buffer, cursor[1] - 1, cursor[1], false)[1] or ""
+    local view = vim.api.nvim_win_call(window, vim.fn.winsaveview)
+    local info = vim.fn.getwininfo(window)[1]
+    local width = vim.api.nvim_win_get_width(window) - (info and info.textoff or 0)
+    if line == "" or ((view.leftcol or 0) == 0 and vim.fn.strdisplaywidth(line) <= width) then
+        close_preview(state)
+        return
+    end
+    close_preview(state)
+    local position = vim.api.nvim_win_get_position(window)
+    local right_column = position[2] + vim.api.nvim_win_get_width(window) + 1
+    local available_right = vim.o.columns - right_column - 2
+    local column = available_right >= 24 and right_column or 1
+    local float_width = math.max(1, math.min(80, available_right >= 24 and available_right or vim.o.columns - 4))
+    local max_height = math.max(1, vim.o.lines - vim.o.cmdheight - 4)
+    local float_height = math.min(max_height, math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / float_width)))
+    local cursor_row = position[1] + vim.api.nvim_win_call(window, vim.fn.winline) - 1
+    local row = math.max(0, math.min(cursor_row, vim.o.lines - vim.o.cmdheight - float_height - 2))
+    local preview_buffer = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(preview_buffer, 0, -1, false, { line })
+    vim.bo[preview_buffer].modifiable = false
+    vim.bo[preview_buffer].bufhidden = "wipe"
+    local preview_window = vim.api.nvim_open_win(preview_buffer, false, {
+        relative = "editor", row = row, col = column,
+        width = float_width, height = float_height, border = "rounded",
+        style = "minimal", focusable = false,
+    })
+    vim.wo[preview_window].wrap = true
+    state.preview_buffer = preview_buffer
+    state.preview_window = preview_window
+end
+
+local function schedule_preview(state)
+    state.preview_generation = (state.preview_generation or 0) + 1
+    local generation = state.preview_generation
+    vim.defer_fn(function()
+        if states[vim.api.nvim_get_current_tabpage()] == state
+            and state.preview_generation == generation
+        then
+            M.refresh_preview()
+        end
+    end, 100)
+end
+
 local function save_view(state)
     if valid_window(state.window) and state.active_view then
         state.views[state.active_view] = vim.api.nvim_win_call(state.window, vim.fn.winsaveview)
@@ -116,6 +182,7 @@ end
 function M.show(name, context)
     local view = assert(views[name], "Unknown sidebar view: " .. tostring(name))
     local state = tab_state()
+    close_preview(state)
     local current_window = vim.api.nvim_get_current_win()
     if current_window ~= state.window and vim.api.nvim_win_get_config(current_window).relative == "" then
         state.source_window = current_window
@@ -153,11 +220,13 @@ function M.show(name, context)
             vim.fn.winrestview(state.views[name])
         end)
     end
+    schedule_preview(state)
     return state.window
 end
 
 function M.close()
     local state = tab_state()
+    close_preview(state)
     if not valid_window(state.window) then
         state.window = nil
         state.active_view = nil
@@ -221,12 +290,30 @@ function M.setup()
     end
     set_title_highlights()
     vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = set_title_highlights })
+    vim.api.nvim_create_autocmd({ "CursorMoved", "WinEnter", "WinScrolled" }, {
+        group = group,
+        callback = function() schedule_preview(tab_state()) end,
+    })
+    vim.api.nvim_create_autocmd("WinLeave", {
+        group = group,
+        callback = function()
+            local state = tab_state()
+            if vim.api.nvim_get_current_win() == state.window then
+                close_preview(state)
+            end
+        end,
+    })
+    vim.api.nvim_create_autocmd("VimResized", {
+        group = group,
+        callback = function() schedule_preview(tab_state()) end,
+    })
     vim.api.nvim_create_autocmd("WinClosed", {
         group = group,
         callback = function(options)
             local closed = tonumber(options.match)
             for _, state in pairs(states) do
                 if state.window == closed then
+                    close_preview(state)
                     state.last_view = state.active_view
                     state.window = nil
                     state.active_view = nil
@@ -239,6 +326,7 @@ function M.setup()
         callback = function()
             for tabpage, state in pairs(states) do
                 if not vim.api.nvim_tabpage_is_valid(tabpage) then
+                    close_preview(state)
                     for name, buffer in pairs(state.buffers) do
                         if views[name].dispose then
                             views[name].dispose({ tabpage = tabpage, buffer = buffer })

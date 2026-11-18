@@ -123,9 +123,10 @@ local function render(state, message)
     end
     local source_name = state.source_buffer and vim.api.nvim_buf_is_valid(state.source_buffer)
         and vim.api.nvim_buf_get_name(state.source_buffer) or ""
-    local header = state.mode == "definition" and "DEFINITION: " .. (state.word or "")
-        or "SYMBOLS: " .. vim.fn.fnamemodify(source_name, ":t")
-    local lines = { header, message or "" }
+    local header = state.mode == "definition" and "DEFINITION TREE" or "SYMBOL TREE"
+    local subject = state.mode == "definition" and (state.word or "")
+        or vim.fn.fnamemodify(source_name, ":t")
+    local lines = { header, subject ~= "" and subject or "[No Name]", message or "" }
     state.rows = {}
     local function append(nodes, depth)
         for _, node in ipairs(nodes) do
@@ -144,6 +145,7 @@ local function render(state, message)
     vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
     vim.bo[state.buffer].modifiable = false
     sidebar.highlight_title(state.buffer, "ExSidebarSymbolTitle", #header)
+    sidebar.refresh_preview()
 end
 
 local function selected_node(state)
