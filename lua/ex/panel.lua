@@ -57,25 +57,25 @@ local function create_windows(state)
     local row = math.floor((vim.o.lines - vim.o.cmdheight - height) / 2)
     local column = math.floor((vim.o.columns - width - 2) / 2)
     local results_width = width
-    local results_height = height - 9
+    local results_height = height - 11
     local preview_config
     if height >= 16 then
         if width >= 90 then
             results_width = math.floor((width - 2) / 2)
             preview_config = {
-                row = row + 7, col = column + results_width + 2,
+                row = row + 9, col = column + results_width + 2,
                 width = width - results_width - 2, height = results_height,
             }
         else
-            results_height = math.max(1, math.floor((height - 11) / 2))
+            results_height = math.max(1, math.floor((height - 13) / 2))
             preview_config = {
-                row = row + results_height + 9, col = column,
-                width = width, height = height - results_height - 11,
+                row = row + results_height + 11, col = column,
+                width = width, height = height - results_height - 13,
             }
         end
     end
     state.results_window = vim.api.nvim_open_win(state.results_buffer, false, {
-        relative = "editor", row = row + 7, col = column, width = results_width, height = results_height,
+        relative = "editor", row = row + 9, col = column, width = results_width, height = results_height,
         border = "single", style = "minimal", title = " Results ",
     })
     compat.set_window_local(state.results_window, "cursorline", false)
@@ -99,11 +99,11 @@ local function create_windows(state)
     compat.set_window_local(state.input_window, "wrap", false)
     compat.set_window_local(state.input_window, "signcolumn", "no")
     state.extension_window = vim.api.nvim_open_win(state.extension_buffer, false, {
-        relative = "editor", row = row + 2, col = column, width = width, height = 1,
+        relative = "editor", row = row + 3, col = column, width = width, height = 1,
         border = "single", style = "minimal", title = " Extensions (php,js) ",
     })
     state.exclude_window = vim.api.nvim_open_win(state.exclude_buffer, false, {
-        relative = "editor", row = row + 4, col = column, width = width, height = 1,
+        relative = "editor", row = row + 6, col = column, width = width, height = 1,
         border = "single", style = "minimal", title = " Exclude (*.json,node_modules/) ",
     })
     for _, window in ipairs({ state.extension_window, state.exclude_window }) do
@@ -237,7 +237,7 @@ function M.show(name)
     if active then
         M.close(active)
     end
-    if vim.o.columns < 35 or vim.o.lines - vim.o.cmdheight < 14 then
+    if vim.o.columns < 35 or vim.o.lines - vim.o.cmdheight < 15 then
         vim.notify("Screen is too small for panel", vim.log.levels.WARN)
         return
     end

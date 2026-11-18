@@ -117,6 +117,7 @@ end
 
 function M.setup()
     require("lsp.hover").setup()
+    require("lsp.diagnostics").setup()
     vim.filetype.add({ extension = { ctp = "php" } })
     -- 行末に診断を表示する (既定値は 0.11 以降 false、0.10 以前 true のため明示して揃える)
     vim.diagnostic.config({ virtual_text = true })

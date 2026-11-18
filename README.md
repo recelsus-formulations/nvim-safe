@@ -18,11 +18,12 @@ The configuration provides native clipboard integration, file navigation, termin
 
 ## Sidebar
 
-The sidebar hosts independent views in one window per tab. `Ctrl-e` opens or closes it. The first opening shows the File Tree; later openings restore the view, cursor position, and scroll position that were visible when it was closed. Inside the sidebar, `Ctrl-n` and `Ctrl-p` cycle through registered views while retaining each view's position. `:Ex` opens or toggles the File Tree directly. `gd` opens the definition view when the key is not already mapped; `:SymbolTree` opens document symbols, and `:SymbolTree definition` opens definitions.
+The sidebar hosts independent views in one window per tab. `Ctrl-e` opens or closes it. The first opening shows the File Tree; later openings restore the view, cursor position, and scroll position that were visible when it was closed. Inside the sidebar, `Ctrl-n` and `Ctrl-p` cycle through the File Tree, Symbol Tree and Diagnostics Tree while retaining each view's position. `:Ex` opens or toggles the File Tree directly. `gd` opens the definition view when the key is not already mapped; `:SymbolTree` opens document symbols, and `:SymbolTree definition` opens definitions.
 
 The File Tree shows its current root in yellow, directories in blue, and files in the normal text colour. Git status colours take precedence for changed entries; ignored paths and directory markers use a muted grey.
 
 In the Symbol Tree, `Enter` expands or collapses a group or jumps to a location. `Tab` previews a location, `Ctrl-v` and `Ctrl-x` open it in a vertical or horizontal split, `R` refreshes the LSP result, and `q` closes the sidebar. A missing LSP produces a message without affecting the File Tree.
+The Diagnostics Tree lists diagnostics from every source for the current editor buffer, grouped by severity. `Enter` expands a group or jumps to a diagnostic; `R` refreshes and `q` closes the sidebar. It updates when diagnostics change. It has no separate opening key.
 
 `<leader>fg` opens text search, and `<leader>ff` finds files. Both are registered views of the same floating search panel, with input, extension and exclusion fields, a result list, and a preview. `:SearchPanel grep` and `:SearchPanel files` open the views directly. The panel uses ripgrep when `rg` is available and a native Neovim fallback otherwise. Tab moves through the fields and results. Each input field enters Insert mode when focused, and the selected result remains highlighted without cursor focus. Escape leaves Insert mode without closing the panel; Ctrl-w cannot change windows from Normal or Visual mode, while Ctrl-c or `:q` closes it. Text search accepts regular expressions; file search matches relative paths fuzzily without case sensitivity. Additional search views can register with `lua/ex/panel.lua` by providing `title`, `on_show`, `on_change`, and `on_open`.
 
@@ -48,6 +49,7 @@ TypeScript and JavaScript use TypeScript 7 or later through `tsc --lsp --stdio`.
 PHP uses Intelephense. In CakePHP projects identified by a `cakephp/cakephp` requirement in `composer.json`, it indexes legacy `.ctp` templates and uses `webroot/` as the document root when present. Neovim also treats `.ctp` files as PHP. Standard `.php` templates work without extra configuration. CakePHP's dynamic members may need PHPDoc annotations in the project; the configuration keeps undefined member diagnostics enabled.
 
 When an LSP is attached, `K` shows diagnostics on the current line or LSP hover when there are none. Press `Esc` to close the floating window. In a hover window, `Ctrl-v` and `Ctrl-x` open its text in a vertical or horizontal split. `<leader>le`, `[d`, and `]d` open, go to the previous, and go to the next diagnostic respectively.
+In an editor buffer with an attached LSP, `<leader>yc` copies the diagnostic nearest the cursor on the current line, and `<leader>ya` copies every diagnostic on that line. The clipboard text includes file location, severity, message, source, code when present, and the source line. An information message reports success or no diagnostics; a clipboard failure is reported as an error. The mappings are removed after the last LSP detaches.
 
 ## Further Reading
 
