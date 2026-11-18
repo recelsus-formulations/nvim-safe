@@ -19,6 +19,8 @@ require("ex.term").setup()
 require("ex.pairs").setup()
 require("ex.jump").setup()
 require("ex.scope").setup()
+require("ex.illuminate").setup()
+require("ex.panel").setup()
 require("ex.find").setup()
 
 if require("ex.git").is_available() then

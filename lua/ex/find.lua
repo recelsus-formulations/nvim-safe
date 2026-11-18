@@ -1,6 +1,6 @@
 local M = {}
 local compat = require("compat")
-local active
+local panel = require("ex.panel")
 local namespace = vim.api.nvim_create_namespace("ex_find_matches")
 local selection_namespace = vim.api.nvim_create_namespace("ex_find_selection")
 local maximum_results = 500
@@ -67,9 +67,7 @@ local function allowed_extension(name, extensions)
 end
 
 local function is_active(state, request)
-    return active == state and not state.closed and (not request or state.request == request)
-        and vim.api.nvim_buf_is_valid(state.input_buffer)
-        and vim.api.nvim_win_is_valid(state.input_window)
+    return panel.is_active(state) and (not request or state.request == request)
 end
 
 local function stop_search(state)
@@ -81,30 +79,7 @@ local function stop_search(state)
 end
 
 local function close(state)
-    if state.closed then
-        return
-    end
-    state.closed = true
-    stop_search(state)
-    if active == state then
-        active = nil
-    end
-    vim.cmd.stopinsert()
-    for _, window in ipairs({ state.input_window, state.extension_window, state.exclude_window,
-        state.results_window, state.preview_window }) do
-        if vim.api.nvim_win_is_valid(window) then
-            vim.api.nvim_win_close(window, true)
-        end
-    end
-    for _, buffer in ipairs({ state.input_buffer, state.extension_buffer, state.exclude_buffer,
-        state.results_buffer, state.preview_buffer }) do
-        if vim.api.nvim_buf_is_valid(buffer) then
-            vim.api.nvim_buf_delete(buffer, { force = true })
-        end
-    end
-    if vim.api.nvim_win_is_valid(state.origin) then
-        vim.api.nvim_set_current_win(state.origin)
-    end
+    panel.close(state)
 end
 
 local function match_ranges(line, pattern)
@@ -173,7 +148,7 @@ local function set_preview(state, entry, lines, message)
         for row, line in ipairs(display) do
             highlight_ranges(buffer, row - 1, 0, match_ranges(line, state.pattern_text))
         end
-    elseif lines and entry then
+    elseif lines and entry and state.view_name == "grep" then
         highlight_ranges(buffer, selected_row - 1, 0, entry.ranges)
     end
     if lines and entry then
@@ -191,7 +166,8 @@ local function set_preview(state, entry, lines, message)
         end)
     end
     vim.api.nvim_win_set_config(state.preview_window, {
-        title = entry and (" " .. entry.relative:gsub("[%c]", " ") .. ":" .. entry.row .. " ") or " Preview ",
+        title = entry and (" " .. entry.relative:gsub("[%c]", " ")
+            .. (state.view_name == "grep" and ":" .. entry.row or "") .. " ") or " Preview ",
     })
 end
 
@@ -268,16 +244,21 @@ local function render(state, message)
     local highlights = {}
     local width = vim.api.nvim_win_get_width(state.results_window)
     for _, entry in ipairs(state.entries) do
-        local prefix = entry.relative .. ":" .. entry.row .. ":" .. (entry.column + 1) .. ": "
-        local context = math.max(4, math.floor((width - vim.fn.strdisplaywidth(prefix) - 4) / 3))
-        local start = math.max(0, entry.column - context)
-        while start > 0 and entry.text:byte(start + 1) >= 128 and entry.text:byte(start + 1) < 192 do
-            start = start - 1
+        if state.view_name == "files" then
+            table.insert(lines, (entry.relative:gsub("[%c]", " ")))
+            table.insert(highlights, { offset = 0, start = 0 })
+        else
+            local prefix = entry.relative .. ":" .. entry.row .. ":" .. (entry.column + 1) .. ": "
+            local context = math.max(4, math.floor((width - vim.fn.strdisplaywidth(prefix) - 4) / 3))
+            local start = math.max(0, entry.column - context)
+            while start > 0 and entry.text:byte(start + 1) >= 128 and entry.text:byte(start + 1) < 192 do
+                start = start - 1
+            end
+            prefix = prefix .. (start > 0 and "... " or "")
+            local text = prefix .. entry.text:sub(start + 1)
+            table.insert(lines, (text:gsub("[%c]", " ")))
+            table.insert(highlights, { offset = #prefix, start = start })
         end
-        prefix = prefix .. (start > 0 and "... " or "")
-        local text = prefix .. entry.text:sub(start + 1)
-        table.insert(lines, (text:gsub("[%c]", " ")))
-        table.insert(highlights, { offset = #prefix, start = start })
     end
     if #lines == 0 then
         lines = { message or "No matches" }
@@ -293,7 +274,8 @@ local function render(state, message)
     vim.api.nvim_win_set_cursor(state.results_window, { state.selection, 0 })
     highlight_selection(state)
     vim.api.nvim_win_set_config(state.results_window, {
-        title = " " .. #state.entries .. " matches | " .. (message or "Done") .. " ",
+        title = " " .. #state.entries .. (state.view_name == "files" and " files | " or " matches | ")
+            .. (message or "Done") .. " ",
     })
     update_preview(state)
 end
@@ -596,6 +578,177 @@ local function search(state, query, extensions, excludes)
     pump()
 end
 
+local function file_match(relative, query)
+    local ranges = {}
+    local path = relative:lower()
+    local search_from = 1
+    local first
+    local last
+    for index = 1, #query do
+        local position = path:find(query:sub(index, index), search_from, true)
+        if not position then
+            return nil
+        end
+        ranges[#ranges + 1] = { position - 1, position }
+        first = first or position
+        last = position
+        search_from = position + 1
+    end
+    local score = first and (last - first + 1 - #query) * 10 + first + #relative / 100 or #relative
+    return ranges, score
+end
+
+local function add_file(state, request, relative, query)
+    relative = relative:gsub("^%./", "")
+    if relative == "" or #state.entries >= maximum_results then
+        return
+    end
+    local ranges, score = file_match(relative, query)
+    if not ranges then
+        return
+    end
+    state.entries[#state.entries + 1] = {
+        path = compat.joinpath(state.root, relative), relative = relative,
+        row = 1, column = 0, text = relative, ranges = ranges, score = score,
+    }
+    if #state.entries >= maximum_results then
+        request.limited = true
+        if request.job and request.job > 0 then
+            vim.fn.jobstop(request.job)
+        end
+    end
+end
+
+local function finish_files(state, request)
+    if not is_active(state, request) then
+        return
+    end
+    table.sort(state.entries, function(left, right)
+        if left.score ~= right.score then
+            return left.score < right.score
+        end
+        return left.relative < right.relative
+    end)
+    render(state, request.limited and ("Limit " .. maximum_results .. "; narrow the pattern") or "Done")
+end
+
+local function search_files_rg(state, query, extensions, excludes)
+    local command = { "rg", "--files", "--hidden", "--no-ignore" }
+    if #extensions > 0 then
+        local globs = {}
+        for _, extension in ipairs(extensions) do
+            globs[#globs + 1] = "*." .. extension
+        end
+        command[#command + 1] = "--glob"
+        command[#command + 1] = #globs == 1 and globs[1] or "{" .. table.concat(globs, ",") .. "}"
+    end
+    for _, value in ipairs(excludes) do
+        command[#command + 1] = "--glob"
+        command[#command + 1] = "!" .. (value:sub(-1) == "/" and "**/" .. value .. "**" or value)
+    end
+    command[#command + 1] = "."
+    local request = { pending = "", errors = {} }
+    state.request = request
+    local function process_line(line)
+        if is_active(state, request) and not request.limited then
+            add_file(state, request, line, query)
+        end
+    end
+    request.job = vim.fn.jobstart(command, {
+        cwd = state.root,
+        on_stdout = vim.schedule_wrap(function(_, data)
+            if not is_active(state, request) then
+                return
+            end
+            for index, part in ipairs(data) do
+                if index == 1 then
+                    part = request.pending .. part
+                end
+                if index == #data then
+                    request.pending = part
+                else
+                    process_line(part)
+                end
+            end
+            render(state, request.limited and "Limit reached" or "Searching")
+        end),
+        on_stderr = vim.schedule_wrap(function(_, data)
+            for _, line in ipairs(data) do
+                if line ~= "" and #request.errors < 3 then
+                    request.errors[#request.errors + 1] = line
+                end
+            end
+        end),
+        on_exit = vim.schedule_wrap(function(_, code)
+            if not is_active(state, request) then
+                return
+            end
+            process_line(request.pending)
+            if code > 1 and not request.limited then
+                render(state, "rg: " .. table.concat(request.errors, " "):gsub("[%c]", " "))
+            else
+                finish_files(state, request)
+            end
+        end),
+    })
+    if request.job <= 0 then
+        render(state, "Could not start rg")
+    end
+end
+
+local function search_files_native(state, query, extensions, excludes)
+    local request = { directories = { state.root } }
+    state.request = request
+    local pump
+    pump = function()
+        if not is_active(state, request) then
+            return
+        end
+        local deadline = compat.uv.hrtime() + 5000000
+        while compat.uv.hrtime() < deadline and not request.limited do
+            if request.scanner then
+                local name, kind = compat.uv.fs_scandir_next(request.scanner)
+                if not name then
+                    request.scanner = nil
+                else
+                    local path = compat.joinpath(request.directory, name)
+                    local relative = path:sub(#state.root:gsub("/$", "") + 2)
+                    if kind == "directory" and not excluded_directories[name]
+                        and not excluded_path(relative, name, true, excludes)
+                    then
+                        request.directories[#request.directories + 1] = path
+                    elseif kind == "file" and allowed_extension(name, extensions)
+                        and not excluded_path(relative, name, false, excludes)
+                    then
+                        add_file(state, request, relative, query)
+                    end
+                end
+            elseif #request.directories > 0 then
+                request.directory = table.remove(request.directories)
+                request.scanner = compat.uv.fs_scandir(request.directory)
+            else
+                finish_files(state, request)
+                return
+            end
+        end
+        if request.limited then
+            finish_files(state, request)
+        else
+            render(state, "Searching")
+            vim.defer_fn(pump, 1)
+        end
+    end
+    pump()
+end
+
+local function search_files(state, query, extensions, excludes)
+    if vim.fn.executable("rg") == 1 then
+        search_files_rg(state, query, extensions, excludes)
+    else
+        search_files_native(state, query, extensions, excludes)
+    end
+end
+
 local function update_query(state)
     if not is_active(state) then
         return
@@ -608,203 +761,66 @@ local function update_query(state)
     local query = input_text(state.input_buffer)
     local extensions = extension_filters(input_text(state.extension_buffer))
     local excludes = vim.list_extend(vim.deepcopy(default_excludes), split_filters(input_text(state.exclude_buffer)))
-    render(state, query == "" and "Type a pattern" or "Waiting")
+    render(state, query == "" and (state.view_name == "files" and "Listing files" or "Type a pattern")
+        or "Waiting")
     local revision = state.revision
-    if query ~= "" then
+    if query ~= "" or state.view_name == "files" then
         vim.defer_fn(function()
             if is_active(state) and state.revision == revision then
-                search(state, query, extensions, excludes)
+                if state.view_name == "files" then
+                    search_files(state, query:lower(), extensions, excludes)
+                else
+                    search(state, query, extensions, excludes)
+                end
             end
         end, 150)
     end
 end
 
+local function send_quickfix(state)
+    local items = {}
+    for _, entry in ipairs(state.entries) do
+        items[#items + 1] = {
+            filename = entry.path, lnum = entry.row, col = entry.column + 1, text = entry.text,
+        }
+    end
+    local title = state.view_name == "files" and "Files: " or "Search: "
+    close(state)
+    vim.fn.setqflist({}, " ", { title = title .. state.root, items = items })
+    vim.cmd.copen()
+end
+
 function M.grep()
-    if active and is_active(active) then
-        vim.api.nvim_set_current_win(active.input_window)
-        vim.cmd.startinsert()
-        return
-    end
-    if vim.o.columns < 35 or vim.o.lines - vim.o.cmdheight < 14 then
-        vim.notify("Screen is too small for search", vim.log.levels.WARN)
-        return
-    end
-    local state = {
-        origin = vim.api.nvim_get_current_win(), root = vim.fn.getcwd(),
-        entries = {}, selection = 1, revision = 0,
-        input_buffer = vim.api.nvim_create_buf(false, true),
-        extension_buffer = vim.api.nvim_create_buf(false, true),
-        exclude_buffer = vim.api.nvim_create_buf(false, true),
-        results_buffer = vim.api.nvim_create_buf(false, true),
-        preview_buffer = vim.api.nvim_create_buf(false, true),
-    }
-    for _, buffer in ipairs({ state.input_buffer, state.extension_buffer, state.exclude_buffer,
-        state.results_buffer, state.preview_buffer }) do
-        vim.bo[buffer].bufhidden = "hide"
-        vim.bo[buffer].swapfile = false
-    end
-    vim.bo[state.input_buffer].filetype = "ex_find_input"
-    vim.bo[state.extension_buffer].filetype = "ex_find_input"
-    vim.bo[state.exclude_buffer].filetype = "ex_find_input"
-    vim.bo[state.results_buffer].filetype = "ex_find_results"
-    vim.bo[state.preview_buffer].filetype = "ex_find_preview"
-    local width = math.min(vim.o.columns - 4, math.floor(vim.o.columns * 0.9))
-    local height = math.floor((vim.o.lines - vim.o.cmdheight) * 0.8)
-    local row = math.floor((vim.o.lines - vim.o.cmdheight - height) / 2)
-    local column = math.floor((vim.o.columns - width - 2) / 2)
-    local results_width = width
-    local results_height = height - 9
-    local preview_config
-    if height >= 16 then
-        if width >= 90 then
-            results_width = math.floor((width - 2) / 2)
-            preview_config = {
-                row = row + 7, col = column + results_width + 2,
-                width = width - results_width - 2, height = results_height,
-            }
-        else
-            results_height = math.max(1, math.floor((height - 11) / 2))
-            preview_config = {
-                row = row + results_height + 9, col = column,
-                width = width, height = height - results_height - 11,
-            }
-        end
-    end
-    state.results_window = vim.api.nvim_open_win(state.results_buffer, false, {
-        relative = "editor", row = row + 7, col = column, width = results_width, height = results_height,
-        border = "single", style = "minimal", title = " Results ",
-    })
-    compat.set_window_local(state.results_window, "cursorline", false)
-    compat.set_window_local(state.results_window, "wrap", false)
-    compat.set_window_local(state.results_window, "signcolumn", "no")
-    if preview_config then
-        preview_config.relative = "editor"
-        preview_config.border = "single"
-        preview_config.style = "minimal"
-        preview_config.title = " Preview "
-        preview_config.focusable = false
-        state.preview_window = vim.api.nvim_open_win(state.preview_buffer, false, preview_config)
-        compat.set_window_local(state.preview_window, "wrap", false)
-        compat.set_window_local(state.preview_window, "signcolumn", "no")
-        compat.set_window_local(state.preview_window, "number", true)
-    end
-    state.input_window = vim.api.nvim_open_win(state.input_buffer, true, {
-        relative = "editor", row = row, col = column, width = width, height = 1,
-        border = "single", style = "minimal", title = " Search: " .. state.root .. " ",
-    })
-    compat.set_window_local(state.input_window, "wrap", false)
-    compat.set_window_local(state.input_window, "signcolumn", "no")
-    state.extension_window = vim.api.nvim_open_win(state.extension_buffer, false, {
-        relative = "editor", row = row + 2, col = column, width = width, height = 1,
-        border = "single", style = "minimal", title = " Extensions (php,js) ",
-    })
-    state.exclude_window = vim.api.nvim_open_win(state.exclude_buffer, false, {
-        relative = "editor", row = row + 4, col = column, width = width, height = 1,
-        border = "single", style = "minimal", title = " Exclude (*.json,node_modules/) ",
-    })
-    for _, window in ipairs({ state.extension_window, state.exclude_window }) do
-        compat.set_window_local(window, "wrap", false)
-        compat.set_window_local(window, "signcolumn", "no")
-    end
-    active = state
-    local input_windows = { state.input_window, state.extension_window, state.exclude_window, state.results_window }
-    for _, buffer in ipairs({ state.input_buffer, state.extension_buffer, state.exclude_buffer, state.results_buffer }) do
-        local function map(modes, key, callback, description)
-            vim.keymap.set(modes, key, callback, { buffer = buffer, silent = true, desc = description })
-        end
-        map({ "i", "n" }, "<CR>", function() open_selection(state) end, "find: open")
-        map({ "i", "n" }, "<C-v>", function() open_selection(state, "vertical") end, "find: vertical split")
-        map({ "i", "n" }, "<C-x>", function() open_selection(state, "horizontal") end, "find: horizontal split")
-        map({ "i", "n" }, "<C-n>", function() move_selection(state, 1) end, "find: next")
-        map({ "i", "n" }, "<C-p>", function() move_selection(state, -1) end, "find: previous")
-        map({ "i", "n" }, "<Down>", function() move_selection(state, 1) end, "find: next")
-        map({ "i", "n" }, "<Up>", function() move_selection(state, -1) end, "find: previous")
-        for _, key in ipairs({ "<C-d>", "<C-u>" }) do
-            map({ "i", "n" }, key, function()
-                if state.preview_window and vim.api.nvim_win_is_valid(state.preview_window) then
-                    vim.api.nvim_win_call(state.preview_window, function()
-                        vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(key, true, false, true))
-                    end)
-                end
-            end, "find: scroll preview")
-        end
-        map({ "i", "n" }, "<C-c>", function() close(state) end, "find: close")
-        map({ "n", "x" }, "<C-w>", "<Nop>", "find: keep focus in search")
-        map({ "i", "n" }, "<Tab>", function()
-            vim.cmd.stopinsert()
-            local current = vim.api.nvim_get_current_win()
-            local next_index = 1
-            for index, window in ipairs(input_windows) do
-                if current == window then
-                    next_index = index % #input_windows + 1
-                    break
-                end
-            end
-            vim.api.nvim_set_current_win(input_windows[next_index])
-        end, "find: switch input/results")
-        map({ "i", "n" }, "<C-q>", function()
-            local items = {}
-            for _, entry in ipairs(state.entries) do
-                table.insert(items, {
-                    filename = entry.path, lnum = entry.row, col = entry.column + 1, text = entry.text,
-                })
-            end
-            close(state)
-            vim.fn.setqflist({}, " ", { title = "Search: " .. state.root, items = items })
-            vim.cmd.copen()
-        end, "find: send results to quickfix")
-    end
-    local group = vim.api.nvim_create_augroup("ex_find_session", { clear = true })
-    for _, buffer in ipairs({ state.input_buffer, state.extension_buffer, state.exclude_buffer }) do
-        vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
-            group = group, buffer = buffer, callback = function() update_query(state) end,
-        })
-    end
-    vim.api.nvim_create_autocmd("WinEnter", {
-        group = group,
-        callback = function()
-            local window = vim.api.nvim_get_current_win()
-            if window ~= state.input_window and window ~= state.extension_window
-                and window ~= state.exclude_window
-            then
-                return
-            end
-            vim.schedule(function()
-                if is_active(state) and vim.api.nvim_get_current_win() == window then
-                    vim.cmd.startinsert()
-                end
-            end)
-        end,
-    })
-    vim.api.nvim_create_autocmd("CursorMoved", {
-        group = group, buffer = state.results_buffer,
-        callback = function()
-            if is_active(state) and vim.api.nvim_win_is_valid(state.results_window) then
-                state.selection = vim.api.nvim_win_get_cursor(state.results_window)[1]
-                highlight_selection(state)
-                update_preview(state)
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("WinClosed", {
-        group = group,
-        callback = function(options)
-            local window = tonumber(options.match)
-            if not state.closed and (window == state.input_window or window == state.extension_window
-                or window == state.exclude_window or window == state.results_window
-                or window == state.preview_window)
-            then
-                vim.schedule(function() close(state) end)
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("VimResized", { group = group, callback = function() close(state) end })
-    render(state, "Type a pattern")
-    vim.cmd.startinsert()
+    return panel.show("grep")
+end
+
+function M.files()
+    return panel.show("files")
 end
 
 function M.setup()
+    local common_view = {
+        on_change = update_query,
+        on_open = open_selection,
+        on_move = move_selection,
+        on_close = stop_search,
+        on_quickfix = send_quickfix,
+        on_select = function(state)
+            state.selection = vim.api.nvim_win_get_cursor(state.results_window)[1]
+            highlight_selection(state)
+            update_preview(state)
+        end,
+    }
+    panel.register("grep", vim.tbl_extend("force", common_view, {
+        title = "Search",
+        on_show = function(state) render(state, "Type a pattern") end,
+    }))
+    panel.register("files", vim.tbl_extend("force", common_view, {
+        title = "Files",
+        on_show = update_query,
+    }))
     vim.keymap.set("n", "<leader>fg", M.grep, { desc = "find: search text" })
+    vim.keymap.set("n", "<leader>ff", M.files, { desc = "find: search files" })
     local function set_highlights()
         vim.api.nvim_set_hl(0, "ExFindMatch", { fg = "#ffd166", bold = true, default = true })
         vim.api.nvim_set_hl(0, "ExFindCurrent", { bg = "#303846", default = true })
