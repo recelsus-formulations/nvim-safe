@@ -20,7 +20,7 @@ The configuration provides native clipboard integration, file navigation, termin
 
 The sidebar hosts independent views in one window per tab. `Ctrl-e` opens or closes it. The first opening shows the File Tree; later openings restore the view, cursor position, and scroll position that were visible when it was closed. Inside the sidebar, `Ctrl-n` and `Ctrl-p` cycle through registered views while retaining each view's position. `:Ex` opens or toggles the File Tree directly. `gd` opens the definition view when the key is not already mapped; `:SymbolTree` opens document symbols, and `:SymbolTree definition` opens definitions.
 
-The File Tree shows its current root in yellow, directories in blue, and files in the normal text colour. Git status colours take precedence for changed entries.
+The File Tree shows its current root in yellow, directories in blue, and files in the normal text colour. Git status colours take precedence for changed entries; ignored paths and directory markers use a muted grey.
 
 In the Symbol Tree, `Enter` expands or collapses a group or jumps to a location. `Tab` previews a location, `Ctrl-v` and `Ctrl-x` open it in a vertical or horizontal split, `R` refreshes the LSP result, and `q` closes the sidebar. A missing LSP produces a message without affecting the File Tree.
 
@@ -41,6 +41,7 @@ Matching words under the cursor are highlighted in the current editing window af
 ## LSP
 
 Neovim 0.11 and later use `vim.lsp.config` and `vim.lsp.enable`. Earlier supported versions use the local `vim.lsp.start` fallback. Mason can be installed with `:MasonBootstrap`; `:LspInstall [language]` installs supported language server packages. Servers already on `PATH` work without Mason.
+LSP servers are enabled only when their executable and required runtime commands are available. Java LSP checks `java` and `python3`; npm based PHP, Python and Bash servers, plus TypeScript, check `node`.
 
 TypeScript and JavaScript use TypeScript 7 or later through `tsc --lsp --stdio`. The configuration checks `node_modules/.bin/tsc` in the project first, then `tsc` on `PATH`. Install TypeScript in the project or on `PATH`; Mason does not install it through `:LspInstall`.
 

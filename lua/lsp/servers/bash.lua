@@ -4,6 +4,7 @@ return {
     name = "bashls",
     package = "bash-language-server",
     requires = { "npm" },
+    runtime_requires = { "node" },
     config = {
         cmd = { "bash-language-server", "start" },
         filetypes = { "sh", "bash" },

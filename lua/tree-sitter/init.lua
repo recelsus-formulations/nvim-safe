@@ -1,10 +1,6 @@
 local M = {}
 local nvim_treesitter = require("tree-sitter.nvim-treesitter")
 
-local function report_error(message)
-    vim.notify(tostring(message), vim.log.levels.ERROR, { title = "Tree-sitter" })
-end
-
 local function start_highlighting(buffer)
     if not vim.api.nvim_buf_is_valid(buffer) or not vim.api.nvim_buf_is_loaded(buffer) then
         return
@@ -49,7 +45,8 @@ end
 
 local function install(languages)
     if not nvim_treesitter.is_loaded() then
-        report_error("nvim-treesitter is not installed. Run :TreesitterBootstrap first")
+        vim.notify("Parser installation skipped: run :TreesitterBootstrap first", vim.log.levels.INFO,
+            { title = "Tree-sitter" })
         return
     end
     if #languages == 0 then
@@ -57,7 +54,8 @@ local function install(languages)
     end
     nvim_treesitter.install(languages, function(err)
         if err then
-            report_error(err)
+            local level = tostring(err):match("^Missing commands:") and vim.log.levels.INFO or vim.log.levels.ERROR
+            vim.notify(tostring(err), level, { title = "Tree-sitter" })
         end
         refresh_buffers()
     end)

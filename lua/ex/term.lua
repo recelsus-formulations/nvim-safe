@@ -81,6 +81,10 @@ function M.toggle(direction)
     if not terminal then
         error("Unsupported terminal direction: " .. tostring(direction))
     end
+    local shell = vim.fn.split(vim.o.shell)[1]
+    if not shell or vim.fn.executable(shell) ~= 1 then
+        return
+    end
     local tabpage = vim.api.nvim_get_current_tabpage()
     local view = terminal.views[tabpage] or {}
     terminal.views[tabpage] = view

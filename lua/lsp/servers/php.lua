@@ -16,6 +16,7 @@ return {
     name = "intelephense",
     package = "intelephense",
     requires = { "npm" },
+    runtime_requires = { "node" },
     config = {
         cmd = { "intelephense", "--stdio" },
         filetypes = { "php" },

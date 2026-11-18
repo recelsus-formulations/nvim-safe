@@ -87,7 +87,7 @@ function M.bootstrap(force, callback)
         return
     end
     if vim.fn.executable("git") ~= 1 then
-        notify("git executable not found", vim.log.levels.ERROR)
+        notify("nvim-treesitter installation skipped: git executable not found", vim.log.levels.INFO)
         return
     end
     if M.is_installed() and vim.fn.delete(M.path, "rf") ~= 0 then

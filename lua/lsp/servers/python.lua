@@ -4,6 +4,7 @@ return {
     name = "pyright",
     package = "pyright",
     requires = { "npm" },
+    runtime_requires = { "node" },
     config = {
         cmd = { "pyright-langserver", "--stdio" },
         filetypes = { "python" },

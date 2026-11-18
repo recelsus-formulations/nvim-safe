@@ -92,7 +92,8 @@ local function decorate(state)
             table.insert(icons, { " " })
             for _, kind in ipairs(git_priority) do
                 if present[kind] then
-                    vim.api.nvim_buf_set_extmark(state.buffer, git_namespace, index - 1, entry.name_column, {
+                    local start_column = kind == "ignored" and 0 or entry.name_column
+                    vim.api.nvim_buf_set_extmark(state.buffer, git_namespace, index - 1, start_column, {
                         end_col = entry.name_column + #entry.name,
                         hl_group = git_icons[kind][2],
                         priority = 200,
@@ -631,7 +632,7 @@ local function setup_git(group)
         vim.api.nvim_set_hl(0, "ExTreeGitNew", { fg = "#56b6c2", default = true })
         vim.api.nvim_set_hl(0, "ExTreeGitRenamed", { fg = "#c678dd", default = true })
         vim.api.nvim_set_hl(0, "ExTreeGitMerge", { fg = "#d19a66", bold = true, default = true })
-        vim.api.nvim_set_hl(0, "ExTreeGitIgnored", { link = "Comment", default = true })
+        vim.api.nvim_set_hl(0, "ExTreeGitIgnored", { fg = "#8b929a", default = true })
     end
     set_highlights()
     vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = set_highlights })

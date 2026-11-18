@@ -42,6 +42,18 @@ local function load_specs()
 end
 
 local function is_executable(spec)
+    for _, requirement in ipairs(spec.runtime_requires or {}) do
+        local available = false
+        for _, command in ipairs(vim.split(requirement, "|", { plain = true })) do
+            if vim.fn.executable(command) == 1 then
+                available = true
+                break
+            end
+        end
+        if not available then
+            return false
+        end
+    end
     if type(spec.is_available) == "function" then
         return spec.is_available()
     end

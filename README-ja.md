@@ -22,12 +22,14 @@ Mason・nvim-treesitter が対象外のバージョンでは、取得用のコ�
 
 | コマンド | 利用箇所 | 無い場合 |
 | --- | --- | --- |
-| `git` | Git Signs、`:MasonBootstrap` | 印を表示しない。Mason を取得できない |
+| `git` | Git Signs、ファイルツリーの Git 状態、`:MasonBootstrap`、`:TreesitterBootstrap` | Git 表示を使わない。取得操作は案内してスキップ |
 | `win32yank.exe` / `powershell.exe` / `pwsh` | 貼り付け（WSL・Windows） | 次の候補、最終的に Neovim 内のキャッシュを使用 |
 | `pbpaste` | 貼り付け（macOS） | 同上 |
 | `wl-paste` | 貼り付け（Wayland） | 同上 |
 | `xclip` | 貼り付け（X11） | 同上 |
-| `shell`（`$SHELL`） | Terminal | 端末を開けない |
+| `shell`（`$SHELL`） | Terminal | 端末を開かず、編集を続けられる |
+| `bash` | `:ConfigCheck` | 確認画面を開かずスキップ |
+| `rg` | `<leader>fg`・`<leader>ff` | Neovim 内蔵の検索に切り替える |
 
 * コピーは OSC52 のため外部コマンドは不要ですが、端末（tmux 経由の場合は tmux も）の OSC52 対応が必要です。
 * Tree-sitter は Neovim 同梱、または runtimepath に置いた parser/query を使います。外部コマンドは不要で、無い言語は標準 syntax になります。
@@ -201,7 +203,7 @@ nvim-tree と同様に、Git の状態を名前の色と右端の記号で表示
 | ✚ | 未追跡 | シアン |
 | ✖ | 削除 | Git Signs の削除行と同じ |
 | ! | 競合 | 橙 |
-| ◌ | 無視（`.gitignore`）。無視されたディレクトリの配下も含む | コメントと同じ |
+| ◌ | 無視（`.gitignore`）。無視されたディレクトリの配下も含む | 落ち着いたグレー。ディレクトリの展開記号も同色 |
 
 * `git status --porcelain=v1 --ignored=matching -u` を非同期に実行して取得します。ルートと展開中のディレクトリが属するリポジトリが対象です（複数可）。
 * ツリーを開いたとき・`R`・作成/削除/リネーム・ルート変更・新しいリポジトリ内のディレクトリを展開したとき、 \
@@ -335,6 +337,7 @@ Leader + fg で本文検索、Leader + ff でファイル検索を開きます�
   `:MasonBootstrap` を実行するまではダウンロード・通信は行わず、プラグインなしの状態を保ちます。
 * サーバーは実行ファイルが見つかる場合だけ有効にします。Mason 以外で PATH に入れたものも使えます。 \
   Mason でインストールが完了すると、再起動なしで有効になります。
+* Java LSP は `java` と `python3`、npm で提供される PHP・Python・Bash LSP と TypeScript LSP は `node` も起動前に確認します。足りない場合はそのサーバーを有効にしません。
 * npm・Go などサーバーごとに必要な実行環境は自動では入れません。
 * 削除する場合は `stdpath("data")` 配下の `site/pack/ex/opt/mason.nvim` と `mason/` を消します。
 
@@ -362,6 +365,7 @@ return {
     name = "lua_ls",                 -- vim.lsp.config / enable に渡す名前
     package = "lua-language-server", -- Mason のパッケージ名（Mason を使わないなら省略可）
     requires = {},                   -- 必要な外部コマンド。"a|b" はいずれか（bin/check.sh が参照）
+    runtime_requires = {},           -- Commands needed to start the server; missing commands disable it.
     -- executable = "...",           -- cmd が関数の場合に有効化判定へ使う実行ファイル名（java.lua を参照）
     config = {                       -- :help lsp-config
         cmd = { "lua-language-server" },

@@ -198,7 +198,7 @@ do
     check_command("unzip", "zip 配布の展開")
 
     local specs = {}
-    for _, file in ipairs(vim.api.nvim_get_runtime_file("lua/lsp/servers/*.lua", true)) do
+    for _, file in ipairs(vim.fn.glob(root .. "/lua/lsp/servers/*.lua", false, true)) do
         local language = vim.fn.fnamemodify(file, ":t:r")
         local ok, spec = pcall(dofile, file)
         specs[#specs + 1] = { language = language, ok = ok, spec = spec }
@@ -244,8 +244,14 @@ do
             for _, requirement in ipairs(spec.requires or {}) do
                 if not available[requirement] then missing[#missing + 1] = requirement end
             end
+            local missing_runtime = {}
+            for _, requirement in ipairs(spec.runtime_requires or {}) do
+                if not find_any(requirement) then missing_runtime[#missing_runtime + 1] = requirement end
+            end
             local status
-            if path then
+            if #missing_runtime > 0 then
+                status = "needs runtime: " .. table.concat(missing_runtime, ", ")
+            elseif path then
                 status = "ready: " .. path
             elseif spec.install_hint then
                 status = spec.install_hint
@@ -260,7 +266,7 @@ do
             else
                 status = "installable after :MasonBootstrap"
             end
-            out(("  %s %-11s %-14s %s"):format(mark(path), item.language, spec.name, status))
+            out(("  %s %-11s %-14s %s"):format(mark(path and #missing_runtime == 0), item.language, spec.name, status))
         end
     end
 end

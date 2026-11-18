@@ -68,7 +68,6 @@ function M.run()
         return
     end
     if vim.fn.executable("bash") ~= 1 then
-        vim.notify("bash executable not found", vim.log.levels.ERROR, { title = "ConfigCheck" })
         return
     end
     local buffer = get_buffer()

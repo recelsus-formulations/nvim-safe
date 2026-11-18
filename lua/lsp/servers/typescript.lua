@@ -20,6 +20,7 @@ end
 return {
     name = "tsc",
     requires = { "npm" },
+    runtime_requires = { "node" },
     executable = "tsc",
     is_available = function() return true end,
     install_hint = "Install TypeScript 7+ in the project or on PATH; Mason does not provide this server.",

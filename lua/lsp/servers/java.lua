@@ -17,6 +17,7 @@ return {
     name = "jdtls",
     package = "jdtls",
     requires = { "java", "python3" },
+    runtime_requires = { "java", "python3" },
     -- cmd が関数のため、有効化の判定に使う実行ファイルを明示する
     executable = "jdtls",
     config = {

@@ -49,7 +49,7 @@ function M.bootstrap(callback)
         return
     end
     if vim.fn.executable("git") ~= 1 then
-        notify("git executable not found", vim.log.levels.ERROR)
+        notify("Mason installation skipped: git executable not found", vim.log.levels.INFO)
         return
     end
     vim.fn.mkdir(vim.fs.dirname(M.path), "p")
